@@ -1,0 +1,17 @@
+[package]
+name = "gmhistory"
+version = "0.1.0"
+edition = "2024"
+authors = ["BioTomateDE <rust@biotomate.dev>"]
+license = "GPL-3.0-only"
+
+[dependencies]
+base64 = "0.23.1"
+clap = { version = "4.6.7", features = ["derive"] }
+ctrlc = { version = "3.5.2", features = ["termination"] }
+indicatif = "0.18.6"
+quick-xml = { version = "0.42.0", features = ["serialize"] }
+reqwest = { version = "0.13.5", features = ["blocking"] }
+serde = { version = "1.0.229", features = ["derive"] }
+strum = { version = "0.28.0", features = ["derive"] }
+tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread"] }
