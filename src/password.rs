@@ -61,9 +61,10 @@ struct BcMd5 {
     x_off: usize,
 }
 
+#[expect(clippy::unreadable_literal)]
 impl BcMd5 {
-    fn new() -> Self {
-        let mut d = BcMd5 {
+    const fn new() -> Self {
+        let mut d = Self {
             x_buf: [0; 4],
             x_buf_off: 0,
             byte_count: 0,
@@ -79,7 +80,7 @@ impl BcMd5 {
     }
 
     // GeneralDigest.Reset() + MD5Digest.Reset() combined (used only at construction / after DoFinal)
-    fn reset_full(&mut self) {
+    const fn reset_full(&mut self) {
         self.byte_count = 0;
         self.x_buf_off = 0;
         self.x_buf = [0; 4];
@@ -139,7 +140,7 @@ impl BcMd5 {
     }
 
     // MD5Digest.ProcessWord
-    fn process_word(&mut self, input: &[u8], in_off: usize) {
+    const fn process_word(&mut self, input: &[u8], in_off: usize) {
         self.x[self.x_off] = u32::from_le_bytes([
             input[in_off],
             input[in_off + 1],
@@ -180,17 +181,18 @@ impl BcMd5 {
 
     // MD5Digest.ProcessBlock -- standard MD5 compression. Crucially: only xOff is reset,
     // X[] itself is left with whatever stale words remain.
-    fn process_block(&mut self) {
-        fn f(u: u32, v: u32, w: u32) -> u32 {
+    #[expect(clippy::too_many_lines, clippy::many_single_char_names)]
+    const fn process_block(&mut self) {
+        const fn f(u: u32, v: u32, w: u32) -> u32 {
             (u & v) | (!u & w)
         }
-        fn g(u: u32, v: u32, w: u32) -> u32 {
+        const fn g(u: u32, v: u32, w: u32) -> u32 {
             (u & w) | (v & !w)
         }
-        fn h(u: u32, v: u32, w: u32) -> u32 {
+        const fn h(u: u32, v: u32, w: u32) -> u32 {
             u ^ v ^ w
         }
-        fn k(u: u32, v: u32, w: u32) -> u32 {
+        const fn k(u: u32, v: u32, w: u32) -> u32 {
             v ^ (u | !w)
         }
 

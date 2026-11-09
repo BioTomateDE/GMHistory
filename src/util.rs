@@ -1,5 +1,5 @@
 use crate::error::*;
-use std::{io::ErrorKind, time::Duration};
+use std::io::ErrorKind;
 
 fn ignore_kind(result: std::io::Result<()>, kind: ErrorKind) -> MyResult<()> {
     match result {

@@ -1,64 +1,28 @@
-use crate::{error::*, util::ignore_notfound};
-use std::{
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+use reqwest::{ClientBuilder, IntoUrl, Response};
 
-#[derive(Debug, Clone, Default)]
-struct TempStuff {
-    files: Vec<PathBuf>,
-    dirs: Vec<PathBuf>,
-}
+use crate::{
+    error::*,
+    tempslop::{OpenTempFile, new_open_tempfile},
+};
+use std::{io::Write, path::Path, time::Duration};
 
 #[derive(Debug)]
 pub struct Downloader {
     client: reqwest::Client,
-    tempfile: PathBuf,
-    tempdir: PathBuf,
 }
 
 impl Downloader {
-    pub fn new(root_dir: &Path) -> MyResult<Self> {
-        let client = reqwest::ClientBuilder::new()
-            .timeout(Duration::from_secs(240))
+    pub fn new() -> MyResult<Self> {
+        let client = ClientBuilder::new()
+            .timeout(Duration::from_secs(360))
             .build()
             .ctx("Failed to build reqwest client")?;
-        let tempfile = root_dir.join(".tempfile1.tmp");
-        let tempdir = root_dir.join(".archive.tmp.d");
-
-        let tempfile2 = tempfile.clone();
-        let tempdir2 = tempdir.clone();
-
-        // This will fail if already set, so only create one Downloader
-        // triggers for SIGINT and for SIGTERM (`ctrlc` crate feature `termination`)
-        ctrlc::set_handler(move || {
-            remove_temp(&tempfile2, &tempdir2);
-            std::process::exit(130); // SIGINT
-        })
-        .ctx("Failed to set Ctrl+C handler")?;
-
-        remove_temp(&tempfile, &tempdir);
-
-        Ok(Self {
-            client,
-            tempfile,
-            tempdir,
-        })
+        Ok(Self { client })
     }
 
-    pub fn temp_download_file(&self) -> &Path {
-        &self.tempfile
-    }
-
-    pub fn temp_archive_dir(&self) -> &Path {
-        &self.tempdir
-    }
-
-    pub fn remove_temp(&self) {
-        remove_temp(&self.tempfile, &self.tempdir);
-    }
-
-    pub async fn send_request(&self, url: &str) -> MyResult<reqwest::Response> {
+    pub async fn send_request(&self, url: impl IntoUrl) -> MyResult<Response> {
+        let url = url.as_str();
         self.client
             .get(url)
             .send()
@@ -67,19 +31,35 @@ impl Downloader {
             .error_for_status()
             .ctx(|| format!("Recieved non-success HTTP response code for GET request to {url}"))
     }
+
+    pub async fn download(&self, url: impl IntoUrl, target_dir: &Path) -> MyResult<OpenTempFile> {
+        let mut response: Response = self.send_request(url).await?;
+        let content_length = response
+            .content_length()
+            .ctx("No content length specified; possibly a 404 page")?;
+
+        let mut open_tempfile = new_open_tempfile(target_dir)?;
+        let pb = make_progress_bar(content_length);
+
+        // This takes the majority of time
+        while let Some(chunk) = response.chunk().await.ctx("Failed to get response bytes")? {
+            open_tempfile
+                .file_mut()
+                .write_all(&chunk)
+                .ctx("Failed to write response bytes to file")?;
+            pb.inc(chunk.len() as u64);
+        }
+
+        pb.finish_and_clear();
+        Ok(open_tempfile)
+    }
 }
 
-impl Drop for Downloader {
-    fn drop(&mut self) {
-        self.remove_temp();
-    }
-}
-
-fn remove_temp(file_path: &Path, dir_path: &Path) {
-    if let Err(e) = ignore_notfound(std::fs::remove_file(file_path)) {
-        warn!(e, "Failed to remove tempfile `{}`", file_path.display());
-    }
-    if let Err(e) = ignore_notfound(std::fs::remove_dir_all(dir_path)) {
-        warn!(e, "Failed to remove tempdir `{}`", dir_path.display());
-    }
+fn make_progress_bar(content_length: u64) -> ProgressBar {
+    let pb = ProgressBar::new(content_length);
+    #[expect(clippy::literal_string_with_formatting_args)]
+    let style = ProgressStyle::with_template("{percent:>3}% [{bar:50}] {bytes}/{total_bytes}");
+    pb.set_style(style.unwrap().progress_chars("=> "));
+    pb.set_draw_target(ProgressDrawTarget::stdout_with_hz(4));
+    pb
 }

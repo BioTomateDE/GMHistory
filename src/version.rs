@@ -52,7 +52,7 @@ impl fmt::Display for Version {
 }
 
 impl Version {
-    pub const ALL: &[Version] = ALL_VERSIONS;
+    pub const ALL: &[Self] = ALL_VERSIONS;
 }
 const ALL_VERSIONS: &[Version] = &[
     Version(1, 0, 23, 0),

@@ -1,9 +1,8 @@
-use crate::DownloadRuntimeArgs;
 use crate::download::Downloader;
 use crate::error::*;
-use reqwest::{Client, Response};
-use serde::Deserialize;
-use std::time::Duration;
+use crate::rss::Rss;
+use crate::{DownloadRuntimeArgs, password::generate_password};
+use reqwest::Response;
 use strum::{EnumString, IntoStaticStr, VariantArray};
 
 pub async fn download_runtimes(mut args: DownloadRuntimeArgs) -> MyResult<()> {
@@ -15,7 +14,7 @@ pub async fn download_runtimes(mut args: DownloadRuntimeArgs) -> MyResult<()> {
     };
 
     println!("Fetching manifest Zeus-Runtime.rss");
-    let downloader = Downloader::new(&args.output_dir)?;
+    let downloader = Downloader::new()?;
     let response: Response = downloader
         .send_request("https://gms.yoyogames.com/Zeus-Runtime.rss")
         .await
@@ -25,12 +24,11 @@ pub async fn download_runtimes(mut args: DownloadRuntimeArgs) -> MyResult<()> {
     debug(&rss);
     // TODO
 
-    Ok(())
-}
+    if false {
+        _ = generate_password("kys");
+    }
 
-fn parse_rss(text: &str) -> MyResult<Rss> {
-    let xml = text.trim_start_matches('\u{feff}'); // strip the BOM
-    quick_xml::de::from_str(xml).ctx("Failed to parse XML")
+    Ok(())
 }
 
 fn debug(rss: &Rss) {
@@ -40,65 +38,6 @@ fn debug(rss: &Rss) {
             println!("  {:<12} {}", m.name, m.url);
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-struct Rss {
-    channel: Channel,
-}
-
-#[derive(Debug, Deserialize)]
-struct Channel {
-    title: String,
-    #[serde(default)]
-    item: Vec<Item>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Item {
-    title: String,
-    #[serde(rename = "pubDate")]
-    pub_date: String,
-    #[serde(rename = "sparkle:releaseNotesLink")]
-    release_notes_link: String,
-    comments: String,
-    enclosure: Enclosure,
-}
-
-#[derive(Debug, Deserialize)]
-struct Enclosure {
-    #[serde(rename = "@url")]
-    url: String,
-
-    #[serde(rename = "@sparkle:version")]
-    version: String,
-
-    #[serde(rename = "@length")]
-    length: u64,
-
-    #[serde(rename = "@sparkle:dsaSignature")]
-    dsa_signature: String,
-
-    #[serde(rename = "module", default)]
-    modules: Vec<Module>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Module {
-    #[serde(rename = "@name")]
-    name: String,
-
-    #[serde(rename = "@url")]
-    url: String,
-
-    #[serde(rename = "@sparkle:version")]
-    version: String,
-
-    #[serde(rename = "@length")]
-    length: u64,
-
-    #[serde(rename = "@sparkle:dsaSignature")]
-    dsa_signature: String,
 }
 
 /// Corresponds to the "name" field in the XML tag of the RSS manifest.

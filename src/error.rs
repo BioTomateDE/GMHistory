@@ -23,7 +23,7 @@ impl Error {
         self
     }
 
-    pub fn display(&self, level: Level) -> ErrorDisplay {
+    pub const fn display(&'_ self, level: Level) -> ErrorDisplay<'_> {
         ErrorDisplay { error: self, level }
     }
 
@@ -40,7 +40,7 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let Self { message, causes } = self;
-        write!(f, "{}", message)?;
+        write!(f, "{message}")?;
         for cause in causes {
             write!(f, "\n> {cause}")?;
         }
@@ -81,7 +81,7 @@ pub enum Level {
 impl Level {
     const RESET_STYLE: &str = "\x1B[0m";
 
-    pub fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             Self::Debug => "Debug",
             Self::Warn => "Warning",
@@ -89,7 +89,7 @@ impl Level {
         }
     }
 
-    fn ansi_style(self) -> &'static str {
+    const fn ansi_style(self) -> &'static str {
         match self {
             Self::Debug => "\x1B[34m", // Blue
             Self::Warn => "\x1B[33m",  // Yellow
@@ -145,7 +145,7 @@ impl<T> Context<T> for Option<T> {
 
 impl<E: core::error::Error> From<E> for Error {
     fn from(error: E) -> Self {
-        Error {
+        Self {
             message: error.to_string(),
             causes: collect_causes(&error),
         }
@@ -153,7 +153,7 @@ impl<E: core::error::Error> From<E> for Error {
 }
 
 impl<T> Context<T> for MyResult<T> {
-    fn ctx(self, message: impl IntoString) -> MyResult<T> {
+    fn ctx(self, message: impl IntoString) -> Self {
         self.map_err(|e| e.ctx(message))
     }
 }
@@ -176,7 +176,7 @@ fn upper(mut string: String) -> String {
 
 #[macro_export]
 macro_rules! err {
-    ($error:expr, $($arg:tt)*) => {
+    ($error:ident, $($arg:tt)*) => {
         $crate::error::Error::from($error).ctx(format!($($arg)*))
     };
     ($($arg:tt)*) => {
@@ -186,7 +186,7 @@ macro_rules! err {
 
 #[macro_export]
 macro_rules! bail {
-    ($error:expr, $($arg:tt)*) => {
+    ($error:ident, $($arg:tt)*) => {
         return Err($crate::error::Error::from($error).ctx(format!($($arg)*)))
     };
     ($($arg:tt)*) => {
@@ -196,7 +196,7 @@ macro_rules! bail {
 
 #[macro_export]
 macro_rules! warn {
-    ($error:expr, $($arg:tt)*) => {
+    ($error:ident, $($arg:tt)*) => {
         $crate::error::Error::from($error).ctx(format!($($arg)*)).print($crate::error::Level::Warn)
     };
     ($($arg:tt)*) => {

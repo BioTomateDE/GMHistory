@@ -3,7 +3,9 @@ mod error;
 mod extract;
 mod ides;
 mod password;
+mod rss;
 mod runtimes;
+mod tempslop;
 mod util;
 mod version;
 
@@ -77,11 +79,13 @@ struct DownloadRuntimeArgs {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+    tempslop::set_ctrlc_handler();
     let result: error::MyResult<()> = match args.command {
         Command::DownloadIdes(args) => download_ides(args).await,
         Command::DownloadRuntimes(args) => download_runtimes(args).await,
         Command::UpgradeGms1 => todo!(),
     };
+    tempslop::cleanup();
     if let Err(error) = result {
         error.exit();
     }

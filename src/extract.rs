@@ -24,13 +24,13 @@ pub fn invoke_7zip(
     output_flag.push(destination_dir);
 
     let mut cmd = Command::new("7z");
-    cmd.arg("-bso0"); // makes it shut up (except progress indicator)
-    cmd.arg("-y"); // assumes yes on all queries (replace?)
-    cmd.arg("x");
-    cmd.arg(archive_file);
-    cmd.arg(output_flag);
+    _ = cmd.arg("-bso0"); // makes it shut up (except progress indicator)
+    _ = cmd.arg("-y"); // assumes yes on all queries (replace?)
+    _ = cmd.arg("x");
+    _ = cmd.arg(archive_file);
+    _ = cmd.arg(output_flag);
     if let Some(pw) = password {
-        cmd.arg(format!("-p{pw}"));
+        _ = cmd.arg(format!("-p{pw}"));
     }
     let status: ExitStatus = cmd.status().ctx("Could not invoke 7-Zip")?;
     if !status.success() {

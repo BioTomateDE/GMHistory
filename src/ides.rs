@@ -41,6 +41,7 @@
 
 use crate::download::Downloader;
 use crate::error::*;
+use crate::tempslop::{OpenTempFile, new_tempdir};
 use crate::util::ignore_exists;
 use crate::{
     DownloadIdeArgs,
@@ -48,13 +49,7 @@ use crate::{
     password::GMS1_PASSWORD,
     version::Version,
 };
-use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
-use reqwest::Response;
-use std::{
-    fs::File,
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 struct DownloadTarget {
@@ -78,64 +73,36 @@ pub async fn download_ides(args: DownloadIdeArgs) -> MyResult<()> {
     let count = downloads.len();
     println!("Downloading {count} IDEs");
 
-    let downloader = Downloader::new(&args.output_dir).ctx("Failed to create downloader")?;
+    let downloader = Downloader::new().ctx("Failed to create downloader")?;
 
     // TODO: concurrency
     for (i, download_target) in downloads.iter().enumerate() {
         let DownloadTarget { version, url, path } = &download_target;
         println!("{}/{count} Downloading IDE {version} from {url}", i + 1);
-        download(&downloader, url)
+        let temp_download_file: OpenTempFile = downloader
+            .download(url, &args.output_dir)
             .await
             .ctx(|| format!("Failed to download IDE {version} from {url}"))?;
 
-        let source = if args.extract {
-            invoke_7zip(
-                downloader.temp_download_file(),
-                downloader.temp_archive_dir(),
-                None,
-            );
-            if args.upgrade && version.0 == 1 {
-                let upgrade_zip = gms1_upgrade_zip_path(*version, downloader.temp_archive_dir());
-                invoke_7zip(&upgrade_zip, path, Some(GMS1_PASSWORD));
-                downloader.remove_temp();
-                continue;
-            }
-            downloader.temp_archive_dir()
-        } else {
-            downloader.temp_download_file()
-        };
-        if let Err(e) = std::fs::rename(source, path) {
-            bail!(e, "Failed to rename temp to `{}`", path.display());
+        if !args.extract {
+            temp_download_file.rename(path)?;
+            continue;
         }
 
-        downloader.remove_temp();
+        let archive_dir = new_tempdir(&args.output_dir)?;
+        invoke_7zip(temp_download_file.path(), archive_dir.path(), None)?;
+        drop(temp_download_file);
+
+        if args.upgrade && version.0 == 1 {
+            let another_tempdir = new_tempdir(&args.output_dir)?;
+            let upgrade_zip = gms1_upgrade_zip_path(*version, archive_dir.path());
+            invoke_7zip(&upgrade_zip, another_tempdir.path(), Some(GMS1_PASSWORD))?;
+            continue;
+        }
+        archive_dir.rename(path)?;
     }
 
-    downloader.remove_temp();
     println!("All done!");
-    Ok(())
-}
-
-async fn download(downloader: &Downloader, url: &str) -> MyResult<()> {
-    let mut response: Response = downloader.send_request(url).await?;
-
-    // Should never occur with the `known_missing_version` filter
-    let content_length = response
-        .content_length()
-        .ctx("No content length specified; probably a 404 page")?;
-
-    let mut file = File::create_new(&downloader.temp_download_file())
-        .ctx("Failed to create temporary download file")?;
-    let pb = make_progress_bar(content_length);
-
-    // This takes the majority of time
-    while let Some(chunk) = response.chunk().await.ctx("Failed to get response bytes")? {
-        file.write_all(&chunk)
-            .ctx("Failed to write response bytes to file")?;
-        pb.inc(chunk.len() as u64);
-    }
-
-    pb.finish_and_clear();
     Ok(())
 }
 
@@ -204,7 +171,7 @@ fn version_get_path(version: Version, url: &str, args: &DownloadIdeArgs) -> Path
     let name: String = if args.extract {
         version.to_string() // directory
     } else if args.keep_name {
-        url.rsplit_once("/").unwrap().1.to_owned()
+        url.rsplit_once('/').unwrap().1.to_owned()
     } else {
         format!("{version}.exe")
     };
@@ -222,17 +189,9 @@ fn report_bad_versions(bad_versions: &[Version], wgat: &'static str) {
     for ver in bad_versions {
         let _ = write!(buffer, "{ver}, ");
     }
-    buffer.pop();
-    buffer.pop();
+    _ = buffer.pop();
+    _ = buffer.pop();
     warn!("{buffer}");
-}
-
-fn make_progress_bar(content_length: u64) -> ProgressBar {
-    let pb = ProgressBar::new(content_length);
-    let style = ProgressStyle::with_template("{percent:>3}% [{bar:50}] {bytes}/{total_bytes}");
-    pb.set_style(style.unwrap().progress_chars("=> "));
-    pb.set_draw_target(ProgressDrawTarget::stdout_with_hz(4));
-    pb
 }
 
 /// Some versions weren't recorded by archive.org :(
@@ -249,11 +208,10 @@ const fn known_missing_version(ver: Version) -> bool {
 /// Some installer downloads were captured before they were actually released.
 /// This causes the earliest snapshot to be a 404 page instead of a download.
 #[expect(clippy::unreadable_literal)]
-fn override_timestamp(ver: Version) -> Option<u64> {
+const fn override_timestamp(ver: Version) -> Option<u64> {
     Some(match ver {
         Version(1, 1, 1013, _) => 20140721060018,
-        Version(1, 1, 1044, _) => 20160325114921,
-        Version(1, 1, 1058, _) => 20160325114921,
+        Version(1, 1, 1044 | 1058, _) => 20160325114921,
         Version(1, 1, 1076, _) => 20140721043634,
         _ => return None,
     })
