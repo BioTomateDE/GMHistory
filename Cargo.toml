@@ -15,6 +15,7 @@ wildcard_imports = "allow"
 doc_markdown = "allow"
 option_if_let_else = "allow"
 cast_possible_truncation = "allow"
+significant_drop_tightening = "allow"        # this needs more work lol
 
 [dependencies]
 base64 = "0.23.1"

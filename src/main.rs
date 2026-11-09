@@ -16,6 +16,7 @@ use clap::Parser;
 use clap::Subcommand;
 use std::path::PathBuf;
 
+/// Tool to download and extract GameMaker IDE installers and runtimes.
 #[derive(Debug, Parser)]
 struct Args {
     #[command(subcommand)]
@@ -29,20 +30,19 @@ enum Command {
     UpgradeGms1,
 }
 
-/// Downloads GameMaker IDE installers.
+/// Download GameMaker IDE installers and potentially extract them.
 #[derive(Debug, Parser)]
 struct DownloadIdeArgs {
     /// The directory where IDEs will be collected.
-    /// Defaults to "gamemaker-ides".
     #[arg(long, short, default_value = "gamemaker-ides")]
     output_dir: PathBuf,
 
     /// The IDE versions to download.
-    /// If unspecified, downloads all.
+    /// If unspecified, download all.
     #[arg(long, short)]
     versions: Vec<Version>,
 
-    /// Extracts the archive contained in the installers.
+    /// Extract the archive contained in the installers.
     #[arg(long, short = 'x')]
     extract: bool,
 
@@ -51,7 +51,7 @@ struct DownloadIdeArgs {
     #[arg(long, short)]
     upgrade: bool,
 
-    /// Keeps the original installer filename instead of renaming to `{version}.exe`.
+    /// Keep the original installer filename instead of renaming to `{version}.exe`.
     /// Has no effect if `--extract` is specified.
     #[arg(long, short)]
     keep_name: bool,
@@ -61,17 +61,16 @@ struct DownloadIdeArgs {
 #[derive(Debug, Parser)]
 struct DownloadRuntimeArgs {
     /// The directory where runtimes will be collected.
-    /// Defaults to "gamemaker-runtimes".
     #[arg(long, short, default_value = "gamemaker-runtimes")]
     output_dir: PathBuf,
 
     /// The runtime versions to download.
-    /// If unspecified, downloads all.
+    /// If unspecified, download all.
     #[arg(long, short)]
     versions: Vec<Version>,
 
     /// The platform modules to download.
-    /// If unspecified, downloads all.
+    /// If unspecified, download all.
     #[arg(long, short)]
     platforms: Vec<runtimes::Platform>,
 }

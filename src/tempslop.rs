@@ -2,21 +2,23 @@ use crate::{error::*, util::ignore_notfound, warn};
 use std::{
     fs::File,
     path::{Path, PathBuf},
-    sync::{Mutex, MutexGuard, PoisonError},
+    sync::Mutex,
 };
 
 static TEMP_ITEMS: Mutex<TempItems> = Mutex::new(TempItems::new());
 
 #[derive(Debug)]
 struct TempItems {
-    items: Vec<(TempItemKind, PathBuf)>,
+    files: Vec<TempFile>,
+    dirs: Vec<TempDir>,
     counter: usize,
 }
 
 impl TempItems {
     const fn new() -> Self {
         Self {
-            items: Vec::new(),
+            files: Vec::new(),
+            dirs: Vec::new(),
             counter: 1,
         }
     }
@@ -28,7 +30,7 @@ enum TempItemKind {
     Dir,
 }
 impl TempItemKind {
-    fn word(self) -> &'static str {
+    const fn word(self) -> &'static str {
         match self {
             Self::File => "file",
             Self::Dir => "dir",
@@ -70,71 +72,57 @@ impl Drop for TempDir {
 
 #[derive(Debug)]
 pub struct OpenTempFile {
-    path: PathBuf,
+    tempfile: TempFile,
     file: File,
 }
 impl OpenTempFile {
     pub fn path(&self) -> &Path {
-        &self.path
+        self.tempfile.path()
     }
-    pub fn file(&self) -> &File {
+    pub const fn file(&self) -> &File {
         &self.file
     }
-    pub fn file_mut(&mut self) -> &mut File {
+    pub const fn file_mut(&mut self) -> &mut File {
         &mut self.file
     }
     pub fn rename(self, new_path: &Path) -> MyResult<()> {
         rename(self.path(), new_path, TempItemKind::File)
     }
 }
-impl Drop for OpenTempFile {
-    fn drop(&mut self) {
-        // TODO: does this need to unlock the file first?
-        remove_tempfile(&self.path);
-    }
-}
 
-#[allow(clippy::significant_drop_tightening)] // lint is currently stupid asf
-fn new_temp_item(dir: &Path, kind: TempItemKind) -> MyResult<PathBuf> {
-    let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned")?;
-    let filename: String = match kind {
-        TempItemKind::File => format!(".download{}.tmp", temp_items.counter),
-        TempItemKind::Dir => format!(".archive{}.tmp.d", temp_items.counter),
-    };
-    let path: PathBuf = dir.join(filename);
-    if path.exists() {
-        bail!(
-            "Temp item already exists! This is really bad: {}",
-            path.display(),
-        );
-    }
-    temp_items.counter += 1;
-    temp_items.items.push((kind, path.clone()));
-    Ok(path)
-}
+const TIP: &str = "Only run one instance of this program at a time! Delete the tempfile and try again";
 
 pub fn new_tempfile(inside_dir: &Path) -> MyResult<TempFile> {
-    new_temp_item(inside_dir, TempItemKind::File)
-        .map(TempFile)
-        .ctx(|| {
-            format!(
-                "Failed to create tempfile inside `{}`",
-                inside_dir.display()
-            )
-        })
+    let ctx = || format!("Failed to create tempfile inside `{}`", inside_dir.display());
+    let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned").ctx(ctx)?;
+    let filename = format!(".download{}.tmp", temp_items.counter);
+    let path: PathBuf = inside_dir.join(filename);
+    if path.exists() {
+        return Err(err!("Tempfile already exists: {}", path.display()).ctx(TIP).ctx(ctx));
+    }
+    temp_items.counter += 1;
+    temp_items.files.push(TempFile(path.clone()));
+    Ok(TempFile(path))
 }
 
 pub fn new_open_tempfile(inside_dir: &Path) -> MyResult<OpenTempFile> {
-    let path: PathBuf = new_temp_item(inside_dir, TempItemKind::File)?;
-    let file = File::create_new(&path).ctx("Failed to create tempfile")?;
+    let tempfile: TempFile = new_tempfile(inside_dir)?;
+    let file = File::create_new(tempfile.path()).ctx("Failed to create tempfile")?;
     file.try_lock().ctx("Failed to lock created tempfile")?;
-    Ok(OpenTempFile { path, file })
+    Ok(OpenTempFile { tempfile, file })
 }
 
 pub fn new_tempdir(inside_dir: &Path) -> MyResult<TempDir> {
-    new_temp_item(inside_dir, TempItemKind::Dir)
-        .map(TempDir)
-        .ctx(|| format!("Failed to create tempdir inside `{}`", inside_dir.display()))
+    let ctx = || format!("Failed to create tempdir inside `{}`", inside_dir.display());
+    let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned").ctx(ctx)?;
+    let filename = format!(".archive{}.tmp.d", temp_items.counter);
+    let path: PathBuf = inside_dir.join(filename);
+    if path.exists() {
+        return Err(err!("Tempdir already exists: {}", path.display()).ctx(TIP).ctx(ctx));
+    }
+    temp_items.counter += 1;
+    temp_items.dirs.push(TempDir(path.clone()));
+    Ok(TempDir(path))
 }
 
 pub fn set_ctrlc_handler() {
@@ -152,7 +140,8 @@ pub fn cleanup() {
         Ok(items) => items,
         Err(poison_error) => poison_error.into_inner(),
     };
-    temp_items.items.clear();
+    temp_items.files.clear();
+    temp_items.dirs.clear();
 }
 
 fn remove_tempfile(path: &Path) {

@@ -1,0 +1,92 @@
+# GMHistory
+
+Tool written in Rust to download and extract GameMaker IDEs and runtimes.
+
+This tool can:
+
+- Download _GameMaker: Studio 1_ IDE installers (archive.org)
+- Download _GameMaker Studio 2_ IDE installers (partially archive.org)
+- Download modern _GameMaker_ IDE installers
+- Download modern (GMS2+) GameMaker _runtimes_
+- Extract the directory structure of the IDE installer (just 7-Zip)
+- Extract the password-protected `UpgradeZip` of _GameMaker: Studio 1_ which contains the "actual" IDE
+- Extract the password-protected runtime ZIP archives
+
+Of all **217** GameMaker IDE versions, this tool can download **164** (the rest are [lost media](#lost-media)).
+
+## Installation
+
+> [!NOTE]
+> This tool is still a work-in-progress.
+> Things might not work yet. Things might change.
+> I will release pre-built binaries when it is stable enough.
+
+1. Install the [Rust toolchain](https://rustup.rs)
+2. Install 7-Zip (see below).
+3. Clone this repo: `git clone https://github.com/BioTomateDE/GMHistory && cd GMHistory`
+4. Compile: `cargo b -r`
+5. Run the program: `./target/release/gmhistory`
+
+To understand the program better, call it with `--help` on a subcommand, like `./gmhistory download-ides --help`.
+In order to customize the output directory, use the `-o` flag.
+
+### Getting 7-Zip
+
+- Website: <https://7-zip.org>
+- Debian/Ubuntu: `sudo apt install 7zip`
+- Arch Linux: `sudo pacman -S 7zip`
+- I don't care about other distros
+
+If you are a poor soul still using Windows, then you'll also have to make sure that the `7z` program is in your PATH.
+See <https://stackoverflow.com/questions/4822400> for example.
+
+## HTML changelogs
+
+These are the official IDE changelogs by YoYo Games.
+
+- (changelogs 1.0.23+) 1.1.412 - 1.1.754: <https://web.archive.org/web/20130123092814/https://store.yoyogames.com/downloads/gm-studio/release-notes-studio.html#:~:text=Version%201.1.412>
+- 1.1.867 - 1.4.1804: <https://web.archive.org/web/20180829163534/http://store.yoyogames.com/downloads/gm-studio/release-notes-studio.html#:~:text=Version%201.1.867>
+- 1.4.9999 (latest revision): <https://store.yoyogames.com/downloads/gm-studio/release-notes-studio.html>
+- (changelogs 2.0.1.33+) 2.1.4.295 - latest (2024.14.4.222): <https://gms.yoyogames.com/ReleaseNotes.html>
+
+## 1.4.9999 revisions
+
+There are multiple revisions of 1.4.9999.
+For the same download link and page, the changelogs and IDE installer differ slightly for different archive.org snapshots.
+
+> TODO: Test whether the IDE is actually different (apart from metadata changes)?
+
+This program always downloads the oldest available 1.4.9999 revision.
+
+| date       | changelog ID   | installer ID   |
+| ---------- | -------------- | -------------- |
+| 2018-08-28 | 20180830234512 | 20180902152118 |
+| 2018-09-06 | 20180927020445 | 20180902152118 |
+| 2018-10-04 | 20181225202637 | 20190327151917 |
+
+- The **date** is the date specified in the header in the changelog HTML: `/html/body/h1[1]/a[1]`.
+
+- The **changelog ID** is the "archive.org timestamp" of the changelog HTML:
+  `https://web.archive.org/web/{TIMESTAMP}/https://store.yoyogames.com/downloads/gm-studio/release-notes-studio.html`
+
+- The **installer ID** is the "archive.org timestamp" of the Windows IDE installer download:
+  `https://web.archive.org/web/{TIMESTAMP}/http://store.yoyogames.com/downloads/gm-studio/GMStudio-Installer-1.4.9999.exe`
+
+This installer timestamp is the same for 2018-08-28 and 2018-09-06;
+archive.org did unfortunately not record a snapshot between those two 1.4.9999 revisions.
+
+## Lost media
+
+Some IDEs are not downloadable via [archive.org](https://web.archive.org) or the official website anymore:
+
+- GM:S 1 has no downloads before 1.1.690
+- GMS 2 has no downloads before 2.1.4.295
+- There might be more 1.4.9999 revisions between the snapshots recorded by archive.org
+
+If you have access to these IDEs, let me know!
+
+Contact me via:
+
+- Discord: `@biotomate.de` (User ID 1383525574508679228)
+- Email: `bio@biotomate.dev`
+- Github Issue/PR
