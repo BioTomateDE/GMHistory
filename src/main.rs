@@ -1,8 +1,10 @@
+mod download;
 mod error;
 mod extract;
 mod ides;
 mod password;
 mod runtimes;
+mod util;
 mod version;
 
 use crate::ides::download_ides;
@@ -56,20 +58,31 @@ struct DownloadIdeArgs {
 /// Downloads GameMaker runtimes (GMS2+).
 #[derive(Debug, Parser)]
 struct DownloadRuntimeArgs {
+    /// The directory where runtimes will be collected.
+    /// Defaults to "gamemaker-runtimes".
+    #[arg(long, short, default_value = "gamemaker-runtimes")]
+    output_dir: PathBuf,
+
     /// The runtime versions to download.
     /// If unspecified, downloads all.
     #[arg(long, short)]
     versions: Vec<Version>,
 
+    /// The platform modules to download.
+    /// If unspecified, downloads all.
+    #[arg(long, short)]
     platforms: Vec<runtimes::Platform>,
 }
 
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    match args.command {
-        Command::DownloadIdes(args) => download_ides(args),
+    let result: error::MyResult<()> = match args.command {
+        Command::DownloadIdes(args) => download_ides(args).await,
         Command::DownloadRuntimes(args) => download_runtimes(args).await,
         Command::UpgradeGms1 => todo!(),
+    };
+    if let Err(error) = result {
+        error.exit();
     }
 }

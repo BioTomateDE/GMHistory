@@ -1,12 +1,12 @@
-use std::time::Duration;
-
+use crate::DownloadRuntimeArgs;
+use crate::download::Downloader;
+use crate::error::*;
 use reqwest::{Client, Response};
 use serde::Deserialize;
+use std::time::Duration;
 use strum::{EnumString, IntoStaticStr, VariantArray};
 
-use crate::{DownloadRuntimeArgs, error::print_trace};
-
-pub async fn download_runtimes(mut args: DownloadRuntimeArgs) {
+pub async fn download_runtimes(mut args: DownloadRuntimeArgs) -> MyResult<()> {
     let platforms = if args.platforms.is_empty() {
         Platform::VARIANTS
     } else {
@@ -14,24 +14,32 @@ pub async fn download_runtimes(mut args: DownloadRuntimeArgs) {
         &args.platforms
     };
 
-    let client: Client = reqwest::ClientBuilder::new()
-        .timeout(Duration::from_secs(240))
-        .build()
-        .expect("failed to build reqwest client");
-
-    println!("Fetching Zeus-Runtime.rss");
-    let resp = client
-        .get("https://gms.yoyogames.com/Zeus-Runtime.rss")
-        .send()
+    println!("Fetching manifest Zeus-Runtime.rss");
+    let downloader = Downloader::new(&args.output_dir)?;
+    let response: Response = downloader
+        .send_request("https://gms.yoyogames.com/Zeus-Runtime.rss")
         .await
-        .and_then(Response::error_for_status);
-    let rss = match resp {
-        Ok(r) => match r.text().await {
-            Ok(text) => text,
-            Err(e) => print_trace("Failed to get RSS reponse text", e),
-        },
-        Err(_) => todo!(),
-    };
+        .ctx("Failed to fetch Zeus-Runtime.rss manifest")?;
+    let text: String = response.text().await.ctx("Failed to get response text")?;
+    let rss: Rss = quick_xml::de::from_str(&text).ctx("Failed to parse RSS manifest")?;
+    debug(&rss);
+    // TODO
+
+    Ok(())
+}
+
+fn parse_rss(text: &str) -> MyResult<Rss> {
+    let xml = text.trim_start_matches('\u{feff}'); // strip the BOM
+    quick_xml::de::from_str(xml).ctx("Failed to parse XML")
+}
+
+fn debug(rss: &Rss) {
+    for item in &rss.channel.item {
+        println!("{} ({})", item.title, item.pub_date);
+        for m in &item.enclosure.modules {
+            println!("  {:<12} {}", m.name, m.url);
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,12 +69,16 @@ struct Item {
 struct Enclosure {
     #[serde(rename = "@url")]
     url: String,
+
     #[serde(rename = "@sparkle:version")]
     version: String,
+
     #[serde(rename = "@length")]
     length: u64,
+
     #[serde(rename = "@sparkle:dsaSignature")]
     dsa_signature: String,
+
     #[serde(rename = "module", default)]
     modules: Vec<Module>,
 }
@@ -75,29 +87,18 @@ struct Enclosure {
 struct Module {
     #[serde(rename = "@name")]
     name: String,
+
     #[serde(rename = "@url")]
     url: String,
+
     #[serde(rename = "@sparkle:version")]
     version: String,
+
     #[serde(rename = "@length")]
     length: u64,
+
     #[serde(rename = "@sparkle:dsaSignature")]
     dsa_signature: String,
-}
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let raw = std::fs::read_to_string("update-studio.rss")?;
-    let xml = raw.trim_start_matches('\u{feff}'); // strip the BOM
-
-    let rss: Rss = quick_xml::de::from_str(xml)?;
-
-    for item in &rss.channel.item {
-        println!("{} ({})", item.title, item.pub_date);
-        for m in &item.enclosure.modules {
-            println!("  {:<12} {}", m.name, m.url);
-        }
-    }
-    Ok(())
 }
 
 /// Corresponds to the "name" field in the XML tag of the RSS manifest.

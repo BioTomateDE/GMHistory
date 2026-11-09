@@ -1,4 +1,4 @@
-use crate::cli_panic;
+use crate::error::*;
 use std::{
     ffi::OsString,
     path::Path,
@@ -14,7 +14,11 @@ pub fn probe_7zip() -> bool {
         .is_ok()
 }
 
-pub fn invoke_7zip(archive_file: &Path, destination_dir: &Path, password: Option<&str>) {
+pub fn invoke_7zip(
+    archive_file: &Path,
+    destination_dir: &Path,
+    password: Option<&str>,
+) -> MyResult<()> {
     let mut output_flag = OsString::with_capacity(destination_dir.as_os_str().len() + 2);
     output_flag.push("-o");
     output_flag.push(destination_dir);
@@ -28,8 +32,9 @@ pub fn invoke_7zip(archive_file: &Path, destination_dir: &Path, password: Option
     if let Some(pw) = password {
         cmd.arg(format!("-p{pw}"));
     }
-    let status: ExitStatus = cmd.status().expect("7z waiting failed");
+    let status: ExitStatus = cmd.status().ctx("Could not invoke 7-Zip")?;
     if !status.success() {
-        cli_panic!("7-Zip failed with status {status}, see above");
+        bail!("7-Zip failed with status {status}, see above");
     }
+    Ok(())
 }
