@@ -1,14 +1,18 @@
 use crate::download::Downloader;
 use crate::error::*;
-use crate::tempslop::{OpenTempFile, new_tempdir};
+use crate::tempslop::{OpenTempFile, TempDir};
 use crate::util::ignore_exists;
 use crate::{
     DownloadIdeArgs,
     extract::{invoke_7zip, probe_7zip},
-    password::GMS1_PASSWORD,
     version::Version,
 };
 use std::path::{Path, PathBuf};
+
+/// Hardcoded password for all GM:S 1 upgrade ZIPs.
+///
+/// Datamined from `GameMaker-Studio.exe` lol
+pub const GMS1_PASSWORD: &str = "12#_p@o3w$ir_ADD-_$#";
 
 #[derive(Debug)]
 struct DownloadTarget {
@@ -25,8 +29,7 @@ pub async fn download_ides(args: DownloadIdeArgs) -> MyResult<()> {
         warn!("Option --upgrade has no effect without --extract");
     }
 
-    ignore_exists(std::fs::create_dir(&args.output_dir))
-        .ctx("Could not create output directory")?;
+    ignore_exists(std::fs::create_dir(&args.output_dir)).ctx("Could not create output directory")?;
 
     let downloads: Vec<DownloadTarget> = get_download_targets(&args);
     let count = downloads.len();
@@ -48,12 +51,12 @@ pub async fn download_ides(args: DownloadIdeArgs) -> MyResult<()> {
             continue;
         }
 
-        let archive_dir = new_tempdir(&args.output_dir)?;
+        let archive_dir = TempDir::new(&args.output_dir)?;
         invoke_7zip(temp_download_file.path(), archive_dir.path(), None)?;
         drop(temp_download_file);
 
         if args.upgrade && version.0 == 1 {
-            let another_tempdir = new_tempdir(&args.output_dir)?;
+            let another_tempdir = TempDir::new(&args.output_dir)?;
             let upgrade_zip = gms1_upgrade_zip_path(*version, archive_dir.path());
             invoke_7zip(&upgrade_zip, another_tempdir.path(), Some(GMS1_PASSWORD))?;
             continue;
@@ -184,9 +187,7 @@ fn get_url(version: Version) -> String {
             "https://web.archive.org/web/{timestamp}/http://store.yoyogames.com/downloads/gm-studio/GMStudio-Installer-{version}.exe"
         )
     } else if version.0 == 2 && version.3 < 295 {
-        format!(
-            "https://web.archive.org/web/0/http://gms.yoyogames.com/GameMakerStudio-Installer-{version}.exe"
-        )
+        format!("https://web.archive.org/web/0/http://gms.yoyogames.com/GameMakerStudio-Installer-{version}.exe")
     } else if version.0 == 2 || (version.0 == 2022 && version.1 < 3) {
         // The earliest post-Studio releases (2022.1.0.609, 2022.1.1.610, 2022.2.0.614, 2022.2.1.618) still have Studio in their download URL.
         format!("https://gms.yoyogames.com/GameMakerStudio-Installer-{version}.exe")

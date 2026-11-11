@@ -1,7 +1,7 @@
 #![allow(dead_code, reason = "some fields may not be used")]
 use std::str::FromStr;
 
-use crate::{error::*, version::Version};
+use crate::{error::*, runtime::Platform, version::Version};
 use serde::Deserialize;
 
 fn parse_xml<'de, T: Deserialize<'de>>(xml: &'de str) -> MyResult<T> {
@@ -59,6 +59,7 @@ pub struct Item {
     /// `http://gms.yoyogames.com/release-notes-{version}.json>
     pub comments: String,
 
+    /// Main content
     pub enclosure: Enclosure,
 }
 
@@ -76,18 +77,20 @@ pub struct Enclosure {
     #[serde(rename = "@dsaSignature")] // sparkle
     pub dsa_signature: String,
 
-    #[serde(rename = "module", default)]
+    #[serde(default, rename = "module")]
     pub modules: Vec<Module>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Module {
     #[serde(rename = "@name")]
-    pub name: String,
+    pub name: Platform,
 
     #[serde(rename = "@url")]
     pub url: String,
 
+    /// Usually a GameMaker version, but for `mac.mono` it's some other
+    /// version instead (4.8.0.520, 5.10.1.57 or 6.10.0.104).
     #[serde(rename = "@version")] // sparkle
     pub version: Version,
 

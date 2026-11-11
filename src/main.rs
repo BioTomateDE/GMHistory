@@ -2,7 +2,6 @@ mod download;
 mod error;
 mod extract;
 mod ide;
-mod password;
 mod runtime;
 mod tempslop;
 mod util;
@@ -72,6 +71,18 @@ struct DownloadRuntimeArgs {
     /// If unspecified, download all.
     #[arg(long, short)]
     platforms: Vec<runtime::Platform>,
+
+    /// Create a nested directory structure (version/platform)
+    /// instead of a flat one joined with an underscore.
+    #[arg(long)]
+    nested: bool,
+
+    /// Put the platform before the version in output directory names.
+    ///
+    /// Flat: `{platform}_{version}` instead of `{version}_{platform}`.
+    /// With `--nested`: `{platform}/{version}` instead of `{version}/{platform}`.
+    #[arg(long)]
+    platform_first: bool,
 }
 
 #[tokio::main]

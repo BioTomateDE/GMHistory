@@ -1,10 +1,7 @@
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use reqwest::{ClientBuilder, IntoUrl, Response};
 
-use crate::{
-    error::*,
-    tempslop::{OpenTempFile, new_open_tempfile},
-};
+use crate::{error::*, tempslop::OpenTempFile};
 use std::{io::Write, path::Path, time::Duration};
 
 #[derive(Debug)]
@@ -38,7 +35,7 @@ impl Downloader {
             .content_length()
             .ctx("No content length specified; possibly a 404 page")?;
 
-        let mut open_tempfile = new_open_tempfile(target_dir)?;
+        let mut open_tempfile = OpenTempFile::new(target_dir)?;
         let pb = make_progress_bar(content_length);
 
         // This takes the majority of time

@@ -1,7 +1,8 @@
-use strum::{EnumString, IntoStaticStr, VariantArray};
+use serde::Deserialize;
+use strum::{Display, EnumString, IntoStaticStr, VariantArray};
 
-/// Corresponds to the "name" field in the XML tag of the RSS manifest.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, IntoStaticStr, VariantArray)]
+/// Corresponds to the `name` field in the XML `module` tag of the RSS manifest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, EnumString, IntoStaticStr, Display, VariantArray)]
 pub enum Platform {
     #[strum(serialize = "amazonfire")]
     AmazonFire,

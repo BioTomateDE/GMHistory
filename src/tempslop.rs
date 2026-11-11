@@ -5,6 +5,8 @@ use std::{
     sync::Mutex,
 };
 
+const TIP: &str = "Only run one instance of this program at a time! Delete the tempfile and try again";
+
 static TEMP_ITEMS: Mutex<TempItems> = Mutex::new(TempItems::new());
 
 #[derive(Debug)]
@@ -38,94 +40,107 @@ impl TempItemKind {
     }
 }
 
+///////////////////////////////////////////////////////////////////////////////
 #[derive(Debug)]
 pub struct TempFile(PathBuf);
+
 impl TempFile {
+    pub fn new(inside_dir: &Path) -> MyResult<Self> {
+        let ctx = || format!("Failed to create tempfile inside `{}`", inside_dir.display());
+        let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned").ctx(ctx)?;
+        let filename = format!(".download{}.tmp", temp_items.counter);
+        let path: PathBuf = inside_dir.join(filename);
+        if path.exists() {
+            return Err(err!("Tempfile already exists: {}", path.display()).ctx(TIP).ctx(ctx));
+        }
+        temp_items.counter += 1;
+        temp_items.files.push(Self(path.clone()));
+        Ok(Self(path))
+    }
+
     pub fn path(&self) -> &Path {
         &self.0
     }
+
     #[expect(dead_code)]
     pub fn rename(self, new_path: &Path) -> MyResult<()> {
         rename(self.path(), new_path, TempItemKind::File)
     }
 }
+
 impl Drop for TempFile {
     fn drop(&mut self) {
         remove_tempfile(&self.0);
     }
 }
 
+///////////////////////////////////////////////////////////////////////////////
 #[derive(Debug)]
 pub struct TempDir(PathBuf);
+
 impl TempDir {
+    pub fn new(inside_dir: &Path) -> MyResult<Self> {
+        let ctx = || format!("Failed to create tempdir inside `{}`", inside_dir.display());
+        let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned").ctx(ctx)?;
+        let filename = format!(".archive{}.tmp.d", temp_items.counter);
+        let path: PathBuf = inside_dir.join(filename);
+        if path.exists() {
+            return Err(err!("Tempdir already exists: {}", path.display()).ctx(TIP).ctx(ctx));
+        }
+        temp_items.counter += 1;
+        temp_items.dirs.push(Self(path.clone()));
+        Ok(Self(path))
+    }
+
     pub fn path(&self) -> &Path {
         &self.0
     }
+
     pub fn rename(self, new_path: &Path) -> MyResult<()> {
         rename(self.path(), new_path, TempItemKind::Dir)
     }
 }
+
 impl Drop for TempDir {
     fn drop(&mut self) {
         remove_tempdir(&self.0);
     }
 }
 
+///////////////////////////////////////////////////////////////////////////////
 #[derive(Debug)]
 pub struct OpenTempFile {
     tempfile: TempFile,
     file: File,
 }
+
 impl OpenTempFile {
+    pub fn new(inside_dir: &Path) -> MyResult<Self> {
+        let tempfile = TempFile::new(inside_dir)?;
+        let file = File::create_new(tempfile.path()).ctx("Failed to create tempfile")?;
+        file.try_lock().ctx("Failed to lock created tempfile")?;
+        Ok(Self { tempfile, file })
+    }
+
     pub fn path(&self) -> &Path {
         self.tempfile.path()
     }
+
     #[expect(dead_code)]
     pub const fn file(&self) -> &File {
         &self.file
     }
+
     pub const fn file_mut(&mut self) -> &mut File {
         &mut self.file
     }
+
     pub fn rename(self, new_path: &Path) -> MyResult<()> {
         rename(self.path(), new_path, TempItemKind::File)
     }
 }
 
-const TIP: &str = "Only run one instance of this program at a time! Delete the tempfile and try again";
-
-pub fn new_tempfile(inside_dir: &Path) -> MyResult<TempFile> {
-    let ctx = || format!("Failed to create tempfile inside `{}`", inside_dir.display());
-    let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned").ctx(ctx)?;
-    let filename = format!(".download{}.tmp", temp_items.counter);
-    let path: PathBuf = inside_dir.join(filename);
-    if path.exists() {
-        return Err(err!("Tempfile already exists: {}", path.display()).ctx(TIP).ctx(ctx));
-    }
-    temp_items.counter += 1;
-    temp_items.files.push(TempFile(path.clone()));
-    Ok(TempFile(path))
-}
-
-pub fn new_open_tempfile(inside_dir: &Path) -> MyResult<OpenTempFile> {
-    let tempfile: TempFile = new_tempfile(inside_dir)?;
-    let file = File::create_new(tempfile.path()).ctx("Failed to create tempfile")?;
-    file.try_lock().ctx("Failed to lock created tempfile")?;
-    Ok(OpenTempFile { tempfile, file })
-}
-
-pub fn new_tempdir(inside_dir: &Path) -> MyResult<TempDir> {
-    let ctx = || format!("Failed to create tempdir inside `{}`", inside_dir.display());
-    let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned").ctx(ctx)?;
-    let filename = format!(".archive{}.tmp.d", temp_items.counter);
-    let path: PathBuf = inside_dir.join(filename);
-    if path.exists() {
-        return Err(err!("Tempdir already exists: {}", path.display()).ctx(TIP).ctx(ctx));
-    }
-    temp_items.counter += 1;
-    temp_items.dirs.push(TempDir(path.clone()));
-    Ok(TempDir(path))
-}
+///////////////////////////////////////////////////////////////////////////////
 
 pub fn set_ctrlc_handler() {
     // This will fail if already set, so only create one Downloader

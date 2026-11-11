@@ -1,7 +1,4 @@
-/// Password for all GM:S 1 upgrade ZIPs.
-///
-/// Datamined from GameMaker-Studio.exe lol
-pub const GMS1_PASSWORD: &str = "12#_p@o3w$ir_ADD-_$#";
+use crate::warn;
 
 /// Generates a GMS 2 ZIP password for a given runtime (UUIDv4 + ".zip").
 pub fn generate_password(filename_or_url: &str) -> String {
@@ -11,10 +8,10 @@ pub fn generate_password(filename_or_url: &str) -> String {
 
     if let Some(stem) = filename.strip_suffix(".zip") {
         if let Some(bad_char) = stem.chars().find(|&c| c != '-' && !c.is_ascii_hexdigit()) {
-            eprintln!("warning: filename {filename:?} contains atypical character {bad_char:?}");
+            warn!("Filename {filename:?} contains atypical character {bad_char:?}");
         }
     } else {
-        eprintln!("warning: filename {filename:?} does not end with .zip");
+        warn!("Filename {filename:?} does not end with .zip");
     }
 
     let input = format!("MRJA{filename}PHMD");
@@ -141,12 +138,8 @@ impl BcMd5 {
 
     // MD5Digest.ProcessWord
     const fn process_word(&mut self, input: &[u8], in_off: usize) {
-        self.x[self.x_off] = u32::from_le_bytes([
-            input[in_off],
-            input[in_off + 1],
-            input[in_off + 2],
-            input[in_off + 3],
-        ]);
+        self.x[self.x_off] =
+            u32::from_le_bytes([input[in_off], input[in_off + 1], input[in_off + 2], input[in_off + 3]]);
         self.x_off += 1;
         if self.x_off == 16 {
             self.process_block();

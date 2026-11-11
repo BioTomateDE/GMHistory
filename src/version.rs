@@ -7,6 +7,7 @@ use serde::Deserialize;
 /// The first number is the major; either 1, 2, 2022, 2023 or 2024.
 /// For GM:S 1, the last number is always zero and not printed.
 ///
+/// Note: This can also be a `mac.mono` version in the RSS thingy because of woke.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[serde(try_from = "&str")]
 pub struct Version(pub u16, pub u16, pub u16, pub u16);
@@ -28,21 +29,17 @@ impl core::str::FromStr for Version {
 
 fn parse_version(string: &str) -> MyResult<Version> {
     let parts = &mut string.split('.');
-    let p1: u16 = parse(parts)?;
-    if !matches!(p1, 1 | 2 | 2022 | 2023 | 2024) {
-        bail!("Expected major 1, 2, 2022, 2023 or 2024; got {p1}");
-    }
-    let p2: u16 = parse(parts)?;
-    let p3: u16 = parse(parts)?;
-    let p4 = if p1 == 1 { 0 } else { parse(parts)? };
+    let p1: u16 = parse_part(parts)?;
+    let p2: u16 = parse_part(parts)?;
+    let p3: u16 = parse_part(parts)?;
+    let p4 = if p1 == 1 { 0 } else { parse_part(parts)? };
     if parts.next().is_some() {
         bail!("Too many version parts");
     }
-
     Ok(Version(p1, p2, p3, p4))
 }
 
-fn parse<'a>(parts: &mut impl Iterator<Item = &'a str>) -> MyResult<u16> {
+fn parse_part<'a>(parts: &mut impl Iterator<Item = &'a str>) -> MyResult<u16> {
     let part: &str = parts.next().ctx("Not enough version parts")?;
     part.parse().map_err(|_| err!("Non-numeric version part {part:?}"))
 }
