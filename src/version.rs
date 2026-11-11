@@ -1,38 +1,50 @@
+use crate::error::*;
 use core::fmt;
+use serde::Deserialize;
 
 /// A GameMaker version.
 ///
 /// The first number is the major; either 1, 2, 2022, 2023 or 2024.
 /// For GM:S 1, the last number is always zero and not printed.
 ///
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(try_from = "&str")]
 pub struct Version(pub u16, pub u16, pub u16, pub u16);
 
-impl core::str::FromStr for Version {
-    type Err = &'static str;
-    fn from_str(string: &str) -> Result<Self, Self::Err> {
-        let parts = &mut string.split('.');
-        let p1: u16 = parse(parts)?;
-        if !matches!(p1, 1 | 2 | 2022 | 2023 | 2024) {
-            return Err("invalid major (not 1, 2, 2022, 2023 or 2024)");
-        }
-        let p2: u16 = parse(parts)?;
-        let p3: u16 = parse(parts)?;
-        let p4 = if p1 == 1 { 0 } else { parse(parts)? };
-        if parts.next().is_some() {
-            return Err("too many version parts");
-        }
+impl TryFrom<&str> for Version {
+    type Error = Error;
 
-        Ok(Self(p1, p2, p3, p4))
+    fn try_from(string: &str) -> Result<Self, Self::Error> {
+        parse_version(string).ctx(|| format!("Failed to parse version {string:?}"))
     }
 }
 
-fn parse<'a>(parts: &mut impl Iterator<Item = &'a str>) -> Result<u16, &'static str> {
-    parts
-        .next()
-        .ok_or("not enough version parts")?
-        .parse()
-        .map_err(|_| "non-numeric version part")
+impl core::str::FromStr for Version {
+    type Err = String;
+    fn from_str(string: &str) -> Result<Self, Self::Err> {
+        parse_version(string).map_err(|e| e.message)
+    }
+}
+
+fn parse_version(string: &str) -> MyResult<Version> {
+    let parts = &mut string.split('.');
+    let p1: u16 = parse(parts)?;
+    if !matches!(p1, 1 | 2 | 2022 | 2023 | 2024) {
+        bail!("Expected major 1, 2, 2022, 2023 or 2024; got {p1}");
+    }
+    let p2: u16 = parse(parts)?;
+    let p3: u16 = parse(parts)?;
+    let p4 = if p1 == 1 { 0 } else { parse(parts)? };
+    if parts.next().is_some() {
+        bail!("Too many version parts");
+    }
+
+    Ok(Version(p1, p2, p3, p4))
+}
+
+fn parse<'a>(parts: &mut impl Iterator<Item = &'a str>) -> MyResult<u16> {
+    let part: &str = parts.next().ctx("Not enough version parts")?;
+    part.parse().map_err(|_| err!("Non-numeric version part {part:?}"))
 }
 
 impl fmt::Display for Version {
@@ -43,7 +55,7 @@ impl fmt::Display for Version {
         }
 
         if self.0 == 1 {
-            debug_assert_eq!(self.3, 0, "gms 1 only has 3 version parts");
+            debug_assert_eq!(self.3, 0, "GM:S 1 only has 3 version parts");
             write!(f, "{}.{}.{}", self.0, self.1, self.2)
         } else {
             write!(f, "{}.{}.{}.{}", self.0, self.1, self.2, self.3)

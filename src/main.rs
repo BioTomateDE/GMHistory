@@ -1,16 +1,15 @@
 mod download;
 mod error;
 mod extract;
-mod ides;
+mod ide;
 mod password;
-mod rss;
-mod runtimes;
+mod runtime;
 mod tempslop;
 mod util;
 mod version;
 
-use crate::ides::download_ides;
-use crate::runtimes::download_runtimes;
+use crate::ide::download_ides;
+use crate::runtime::download_runtimes;
 use crate::version::Version;
 use clap::Parser;
 use clap::Subcommand;
@@ -72,7 +71,7 @@ struct DownloadRuntimeArgs {
     /// The platform modules to download.
     /// If unspecified, download all.
     #[arg(long, short)]
-    platforms: Vec<runtimes::Platform>,
+    platforms: Vec<runtime::Platform>,
 }
 
 #[tokio::main]

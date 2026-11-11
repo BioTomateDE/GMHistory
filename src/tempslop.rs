@@ -44,6 +44,7 @@ impl TempFile {
     pub fn path(&self) -> &Path {
         &self.0
     }
+    #[expect(dead_code)]
     pub fn rename(self, new_path: &Path) -> MyResult<()> {
         rename(self.path(), new_path, TempItemKind::File)
     }
@@ -79,6 +80,7 @@ impl OpenTempFile {
     pub fn path(&self) -> &Path {
         self.tempfile.path()
     }
+    #[expect(dead_code)]
     pub const fn file(&self) -> &File {
         &self.file
     }

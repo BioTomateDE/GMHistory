@@ -73,6 +73,7 @@ impl fmt::Display for ErrorDisplay<'_> {
 ///////////////////////////////////////////////////////////////////////////////
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Level {
+    #[expect(dead_code)]
     Debug,
     Warn,
     Error,
