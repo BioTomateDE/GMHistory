@@ -57,7 +57,7 @@ pub struct Module {
     pub name: Platform,
 
     #[serde(rename = "@url")]
-    pub url: DownloadUrl,
+    pub url: String,
 
     /// Usually a GameMaker version, but for `mac.mono` it's some other
     /// version instead (4.8.0.520, 5.10.1.57 or 6.10.0.104).

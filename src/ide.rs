@@ -5,7 +5,7 @@ use crate::extract::invoke_7zip;
 use crate::extract::probe_7zip;
 use crate::tempslop::OpenTempFile;
 use crate::tempslop::TempDir;
-use crate::util::ignore_exists;
+use crate::util::mkdir;
 use crate::version::Version;
 use std::path::Path;
 use std::path::PathBuf;
@@ -30,7 +30,7 @@ pub async fn download_ides(args: DownloadIdeArgs) -> MyResult<()> {
         warn!("Option --upgrade has no effect without --extract");
     }
 
-    ignore_exists(std::fs::create_dir(&args.output_dir)).ctx("Could not create output directory")?;
+    mkdir(&args.output_dir).ctx("Could not create output directory")?;
 
     let downloads: Vec<DownloadTarget> = get_download_targets(&args);
     let count = downloads.len();

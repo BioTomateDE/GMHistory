@@ -15,7 +15,7 @@ use crate::error::*;
 use crate::extract::invoke_7zip;
 use crate::tempslop::OpenTempFile;
 use crate::tempslop::TempDir;
-use crate::util::ignore_exists;
+use crate::util::mkdir;
 use crate::version::Version;
 use reqwest::Response;
 use std::path::Path;
@@ -55,7 +55,7 @@ impl FileStructure {
         } else {
             root_dir.join(version.to_string())
         };
-        ignore_exists(std::fs::create_dir(dir)).ctx("Failed to create subdirectory")
+        mkdir(&dir).ctx("Failed to create subdirectory")
     }
 }
 
@@ -75,10 +75,11 @@ pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
     let text: String = response.text().await.ctx("Failed to get response text")?;
     let rss: Rss = text.parse()?;
 
-    let download_targets: Box<[DownloadTarget]> = get_download_targets(rss, &args.versions, platforms);
-    println!("Got {} download targets", download_targets.len());
+    let download_targets: Box<[DownloadTarget]> = get_download_targets(rss, &args.versions, platforms)?;
+    let count = download_targets.len();
+    println!("Got {count} download targets");
 
-    ignore_exists(std::fs::create_dir(&args.output_dir)).ctx("Failed to create root output directory")?;
+    mkdir(&args.output_dir).ctx("Failed to create root output directory")?;
 
     let file_structure = FileStructure {
         nested: args.nested,
@@ -97,19 +98,17 @@ pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
     }
 
     // TODO: parallelization
-    for download_target in download_targets {
+    for (i, download_target) in download_targets.into_iter().enumerate() {
         let DownloadTarget {
             version,
             platform,
             download_url,
         } = download_target;
 
-        if let DownloadUrl::GameMaker(uuid) = &download_url
-            && LOST_RUNTIMES.contains(uuid)
-        {
+        if LOST_RUNTIMES.contains(&download_url.uuid) {
             println!(
                 "Runtime {version} for {platform} ({}) is known to be missing from the CDN; skipping it",
-                uuid.hyphenated()
+                download_url.uuid.hyphenated()
             );
             continue;
         }
@@ -120,22 +119,16 @@ pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
         }
 
         let url = download_url.to_url();
-        println!("Downloading {version} for {platform} from {url}");
+        println!("({}/{}) Downloading {version} for {platform} from {url}", i + 1, count);
         let open_temp_file: OpenTempFile = downloader
             .download(&url, &args.output_dir)
             .await
             .ctx(|| format!("Failed to download {version} for {platform} from {url}"))?;
 
         let archive_dir = TempDir::new(&args.output_dir)?;
-        let password = if let DownloadUrl::GameMaker(uuid) = download_url {
-            let pw = generate_password(uuid);
-            println!("Extracting {version} ({platform}) with password {pw:?}");
-            Some(pw)
-        } else {
-            println!("Extracting {version} ({platform})");
-            None
-        };
-        invoke_7zip(open_temp_file.path(), archive_dir.path(), password.as_deref())
+        let password: String = generate_password(download_url.uuid);
+        println!("Extracting {version} ({platform}) with password {password:?}");
+        invoke_7zip(open_temp_file.path(), archive_dir.path(), Some(&password))
             .ctx(|| format!("Failed to extract {version} ({platform}) with password {password:?}"))?;
         drop(open_temp_file);
 
@@ -146,7 +139,7 @@ pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
     Ok(())
 }
 
-fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) -> Box<[DownloadTarget]> {
+fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) -> MyResult<Box<[DownloadTarget]>> {
     let mut targets: Vec<DownloadTarget> = Vec::new();
 
     for item in rss.channel.items {
@@ -157,14 +150,17 @@ fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) 
         }
 
         for module in item.enclosure.modules {
-            // `module.version == version` unless it's mac.mono
-            if !platforms.contains(&module.name) {
+            let platform = module.name;
+            if platform == Platform::MacMono || !platforms.contains(&platform) {
                 continue;
             }
+
+            let download_url = DownloadUrl::try_from(module.url.as_str())
+                .ctx(|| format!("Failed to parse download URL for {version} {platform}"))?;
             let target = DownloadTarget {
                 version,
-                platform: module.name,
-                download_url: module.url,
+                platform,
+                download_url,
             };
             targets.push(target);
         }
@@ -180,7 +176,7 @@ fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) 
         targets.push(target);
     }
 
-    targets.into_boxed_slice()
+    Ok(targets.into_boxed_slice())
 }
 
 fn detect_existing_structure(root_dir: &Path) -> MyResult<Option<FileStructure>> {

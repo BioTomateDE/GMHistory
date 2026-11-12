@@ -40,6 +40,17 @@ In order to customize the output directory, use the `-o` flag.
 If you are a poor soul still using Windows, then you'll also have to make sure that the `7z` program is in your PATH.
 See <https://stackoverflow.com/questions/4822400> for example.
 
+## Mac Mono Runtime
+
+The `mac.mono` runtime will not be downloaded by this tool, as it is not GameMaker related.
+You can get them yourself:
+
+- GameMaker 2.1.4.200 - 2.2.0.258: <https://gms.yoyogames.com/MonoFramework-MDK-4.8.0.520.macos10.xamarin.universal.pkg>
+- GameMaker 2.2.1.287 - 2.3.0.401: <https://gms.yoyogames.com/MonoFramework-MDK-5.10.1.57.macos10.xamarin.universal.pkg>
+- GameMaker 2.3.1.406 - 2022.3.0.497: <https://gms.yoyogames.com/MonoFramework-MDK-5.10.1.57.macos10.xamarin.universal.pkg>
+
+These GameMaker version ranges are complete; they range from the oldest RSS item containing `mac.mono` to the newest one containing it.
+
 ## HTML changelogs
 
 These are the official IDE changelogs by YoYo Games.
