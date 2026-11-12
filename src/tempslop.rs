@@ -1,9 +1,10 @@
-use crate::{error::*, util::ignore_notfound, warn};
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
-    sync::Mutex,
-};
+use crate::error::*;
+use crate::util::ignore_notfound;
+use crate::warn;
+use std::fs::File;
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Mutex;
 
 const TIP: &str = "Only run one instance of this program at a time! Delete the tempfile and try again";
 

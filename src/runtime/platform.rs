@@ -1,9 +1,17 @@
 use serde::Deserialize;
-use strum::{Display, EnumString, IntoStaticStr, VariantArray};
+use strum::Display;
+use strum::EnumString;
+use strum::IntoStaticStr;
+use strum::VariantArray;
 
 /// Corresponds to the `name` field in the XML `module` tag of the RSS manifest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, EnumString, IntoStaticStr, Display, VariantArray)]
+#[serde(try_from = "&str")]
 pub enum Platform {
+    /// Not a real platform; exists so you can refer to the download URL in the `enclosure` tag itself.
+    #[strum(serialize = "ROOT")]
+    Root,
+
     #[strum(serialize = "amazonfire")]
     AmazonFire,
 

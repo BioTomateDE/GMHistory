@@ -1,29 +1,11 @@
-use crate::warn;
+/// Generates a GMS2 ZIP password for a given runtime UUID.
+pub fn generate_password(uuid: uuid::Uuid) -> String {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
 
-/// Generates a GMS 2 ZIP password for a given runtime (UUIDv4 + ".zip").
-pub fn generate_password(filename_or_url: &str) -> String {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
-
-    let filename = get_filename(filename_or_url);
-
-    if let Some(stem) = filename.strip_suffix(".zip") {
-        if let Some(bad_char) = stem.chars().find(|&c| c != '-' && !c.is_ascii_hexdigit()) {
-            warn!("Filename {filename:?} contains atypical character {bad_char:?}");
-        }
-    } else {
-        warn!("Filename {filename:?} does not end with .zip");
-    }
-
-    let input = format!("MRJA{filename}PHMD");
+    let input = format!("MRJA{}.zipPHMD", uuid.hyphenated());
     let hashed: [u8; 16] = produce(input.as_bytes());
     STANDARD.encode(hashed)
-}
-
-fn get_filename(filename_or_url: &str) -> &str {
-    match filename_or_url.rfind('/') {
-        Some(idx) => &filename_or_url[idx + 1..],
-        None => filename_or_url,
-    }
 }
 
 // WARNING: Everything beyond here is slopcoded.

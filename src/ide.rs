@@ -1,13 +1,14 @@
+use crate::DownloadIdeArgs;
 use crate::download::Downloader;
 use crate::error::*;
-use crate::tempslop::{OpenTempFile, TempDir};
+use crate::extract::invoke_7zip;
+use crate::extract::probe_7zip;
+use crate::tempslop::OpenTempFile;
+use crate::tempslop::TempDir;
 use crate::util::ignore_exists;
-use crate::{
-    DownloadIdeArgs,
-    extract::{invoke_7zip, probe_7zip},
-    version::Version,
-};
-use std::path::{Path, PathBuf};
+use crate::version::Version;
+use std::path::Path;
+use std::path::PathBuf;
 
 /// Hardcoded password for all GM:S 1 upgrade ZIPs.
 ///

@@ -1,9 +1,9 @@
 use crate::error::*;
-use std::{
-    ffi::OsString,
-    path::Path,
-    process::{Command, ExitStatus, Stdio},
-};
+use std::ffi::OsString;
+use std::path::Path;
+use std::process::Command;
+use std::process::ExitStatus;
+use std::process::Stdio;
 
 pub fn probe_7zip() -> bool {
     Command::new("7z")
@@ -14,11 +14,7 @@ pub fn probe_7zip() -> bool {
         .is_ok()
 }
 
-pub fn invoke_7zip(
-    archive_file: &Path,
-    destination_dir: &Path,
-    password: Option<&str>,
-) -> MyResult<()> {
+pub fn invoke_7zip(archive_file: &Path, destination_dir: &Path, password: Option<&str>) -> MyResult<()> {
     let mut output_flag = OsString::with_capacity(destination_dir.as_os_str().len() + 2);
     output_flag.push("-o");
     output_flag.push(destination_dir);

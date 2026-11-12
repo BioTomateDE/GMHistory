@@ -5,10 +5,10 @@ use serde::Deserialize;
 /// A GameMaker version.
 ///
 /// The first number is the major; either 1, 2, 2022, 2023 or 2024.
-/// For GM:S 1, the last number is always zero and not printed.
+/// For GM:S 1, the last number is always stored as zero and not printed.
 ///
 /// Note: This can also be a `mac.mono` version in the RSS thingy because of woke.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
 #[serde(try_from = "&str")]
 pub struct Version(pub u16, pub u16, pub u16, pub u16);
 

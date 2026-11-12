@@ -1,8 +1,15 @@
-use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
-use reqwest::{ClientBuilder, IntoUrl, Response};
+use indicatif::ProgressBar;
+use indicatif::ProgressDrawTarget;
+use indicatif::ProgressStyle;
+use reqwest::ClientBuilder;
+use reqwest::IntoUrl;
+use reqwest::Response;
 
-use crate::{error::*, tempslop::OpenTempFile};
-use std::{io::Write, path::Path, time::Duration};
+use crate::error::*;
+use crate::tempslop::OpenTempFile;
+use std::io::Write;
+use std::path::Path;
+use std::time::Duration;
 
 #[derive(Debug)]
 pub struct Downloader {

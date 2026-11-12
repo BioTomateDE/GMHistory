@@ -2,19 +2,24 @@ mod lost;
 mod password;
 mod platform;
 pub mod rss;
+mod url;
 
+use self::lost::LOST_RUNTIMES;
 use self::password::generate_password;
 pub use self::platform::Platform;
 use self::rss::Rss;
+use self::url::DownloadUrl;
 use crate::DownloadRuntimeArgs;
 use crate::download::Downloader;
 use crate::error::*;
 use crate::extract::invoke_7zip;
-use crate::tempslop::{OpenTempFile, TempDir};
+use crate::tempslop::OpenTempFile;
+use crate::tempslop::TempDir;
 use crate::util::ignore_exists;
 use crate::version::Version;
 use reqwest::Response;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 use strum::VariantArray;
 
 // TODO: use `dsaSignature` and `length` for validation maybe?
@@ -22,7 +27,7 @@ use strum::VariantArray;
 struct DownloadTarget {
     version: Version,
     platform: Platform,
-    url: String,
+    download_url: DownloadUrl,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -93,24 +98,44 @@ pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
 
     // TODO: parallelization
     for download_target in download_targets {
-        let DownloadTarget { version, platform, url } = download_target;
+        let DownloadTarget {
+            version,
+            platform,
+            download_url,
+        } = download_target;
 
-        // TODO: skip lost runtimes
+        if let DownloadUrl::GameMaker(uuid) = &download_url
+            && LOST_RUNTIMES.contains(uuid)
+        {
+            println!(
+                "Runtime {version} for {platform} ({}) is known to be missing from the CDN; skipping it",
+                uuid.hyphenated()
+            );
+            continue;
+        }
 
         let output_dir: PathBuf = file_structure.resolve(&args.output_dir, version, platform);
         if output_dir.exists() {
             continue;
         }
 
+        let url = download_url.to_url();
+        println!("Downloading {version} for {platform} from {url}");
         let open_temp_file: OpenTempFile = downloader
             .download(&url, &args.output_dir)
             .await
-            .ctx(|| format!("Failed to download {version} for {platform:?} from {url}"))?;
+            .ctx(|| format!("Failed to download {version} for {platform} from {url}"))?;
 
         let archive_dir = TempDir::new(&args.output_dir)?;
-        let password: String = generate_password(&url);
-        println!("Extracting {version} ({platform}) with password {password:?}");
-        invoke_7zip(open_temp_file.path(), archive_dir.path(), Some(&password))
+        let password = if let DownloadUrl::GameMaker(uuid) = download_url {
+            let pw = generate_password(uuid);
+            println!("Extracting {version} ({platform}) with password {pw:?}");
+            Some(pw)
+        } else {
+            println!("Extracting {version} ({platform})");
+            None
+        };
+        invoke_7zip(open_temp_file.path(), archive_dir.path(), password.as_deref())
             .ctx(|| format!("Failed to extract {version} ({platform}) with password {password:?}"))?;
         drop(open_temp_file);
 
@@ -119,13 +144,6 @@ pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
     }
 
     Ok(())
-}
-
-fn get_filename(filename_or_url: &str) -> &str {
-    match filename_or_url.rfind('/') {
-        Some(idx) => &filename_or_url[idx + 1..],
-        None => filename_or_url,
-    }
 }
 
 fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) -> Box<[DownloadTarget]> {
@@ -137,6 +155,7 @@ fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) 
         if !versions.is_empty() && !versions.contains(&version) {
             continue;
         }
+
         for module in item.enclosure.modules {
             // `module.version == version` unless it's mac.mono
             if !platforms.contains(&module.name) {
@@ -145,10 +164,20 @@ fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) 
             let target = DownloadTarget {
                 version,
                 platform: module.name,
-                url: module.url,
+                download_url: module.url,
             };
             targets.push(target);
         }
+
+        if !platforms.contains(&Platform::Root) {
+            continue;
+        }
+        let target = DownloadTarget {
+            version,
+            platform: Platform::Root,
+            download_url: item.enclosure.url,
+        };
+        targets.push(target);
     }
 
     targets.into_boxed_slice()
