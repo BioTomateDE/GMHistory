@@ -12,7 +12,9 @@ pub use self::platform::Platform;
 use self::rss::Rss;
 use self::url::DownloadUrl;
 use crate::DownloadRuntimeArgs;
-use crate::download::Downloader;
+use crate::download::download;
+use crate::download::fetch_text;
+use crate::download::init_client;
 use crate::error::*;
 use crate::extract::invoke_7zip;
 use crate::tempslop::OpenTempFile;
@@ -43,9 +45,9 @@ pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
         warn!("This tool does not support downloading mac.mono; see the GitHub README for download links");
     }
     validate_versions(&args.versions);
+    init_client();
 
-    let downloader = Downloader::new()?;
-    let rss: Rss = fetch_manifest(&downloader).await?;
+    let rss: Rss = fetch_manifest().await?;
 
     let download_targets: Box<[DownloadTarget]> = get_download_targets(rss, &args.versions, &args.platforms)?;
     let count = download_targets.len();
@@ -79,8 +81,7 @@ pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
 
         let url = download_url.to_url();
         println!("({}/{}) Downloading {version} for {platform} from {url}", i + 1, count);
-        let open_temp_file: OpenTempFile = downloader
-            .download(&url, &args.output_dir)
+        let open_temp_file: OpenTempFile = download(&url, &args.output_dir)
             .await
             .ctx(|| format!("Failed to download {version} for {platform} from {url}"))?;
 
@@ -142,10 +143,9 @@ fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) 
     Ok(targets.into_boxed_slice())
 }
 
-async fn fetch_manifest(downloader: &Downloader) -> MyResult<Rss> {
+async fn fetch_manifest() -> MyResult<Rss> {
     println!("Fetching manifest Zeus-Runtime.rss");
-    let text: String = downloader
-        .fetch_text("https://gms.yoyogames.com/Zeus-Runtime.rss")
+    let text: String = fetch_text("https://gms.yoyogames.com/Zeus-Runtime.rss")
         .await
         .ctx("Failed to fetch Zeus-Runtime.rss manifest")?;
     text.parse::<Rss>().ctx("Failed to parse Zeus-Runtime.rss XML")

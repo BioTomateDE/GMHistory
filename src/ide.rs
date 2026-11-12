@@ -1,5 +1,6 @@
 use crate::DownloadIdeArgs;
-use crate::download::Downloader;
+use crate::download::download;
+use crate::download::init_client;
 use crate::error::*;
 use crate::extract::invoke_7zip;
 use crate::extract::probe_7zip;
@@ -30,20 +31,18 @@ pub async fn download_ides(args: DownloadIdeArgs) -> MyResult<()> {
         warn!("Option --upgrade has no effect without --extract");
     }
 
+    init_client();
     mkdir(&args.output_dir).ctx("Could not create output directory")?;
 
     let downloads: Vec<DownloadTarget> = get_download_targets(&args);
     let count = downloads.len();
     println!("Downloading {count} IDEs");
 
-    let downloader = Downloader::new().ctx("Failed to create downloader")?;
-
     // TODO: concurrency
     for (i, download_target) in downloads.iter().enumerate() {
         let DownloadTarget { version, url, path } = &download_target;
         println!("{}/{count} Downloading IDE {version} from {url}", i + 1);
-        let temp_download_file: OpenTempFile = downloader
-            .download(url, &args.output_dir)
+        let temp_download_file: OpenTempFile = download(url, &args.output_dir)
             .await
             .ctx(|| format!("Failed to download IDE {version} from {url}"))?;
 

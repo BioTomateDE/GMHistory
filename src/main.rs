@@ -75,7 +75,7 @@ struct DownloadRuntimeArgs {
     /// List all platforms and exit.
     #[arg(long)]
     list_platforms: bool,
-    
+
     /// Create a nested directory structure (version/platform)
     /// instead of a flat one joined with an underscore.
     #[arg(long)]
@@ -98,7 +98,7 @@ async fn main() {
         Command::DownloadRuntimes(args) => download_runtimes(args).await,
         Command::UpgradeGms1 => todo!(),
     };
-    tempslop::cleanup();
+    tempslop::cleanup(); // TODO: not needed i think
     if let Err(error) = result {
         error.exit();
     }
