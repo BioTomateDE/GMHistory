@@ -1,9 +1,11 @@
+mod fs;
 mod lost;
 mod password;
 mod platform;
 pub mod rss;
 mod url;
 
+use self::fs::FileStructure;
 use self::lost::LOST_RUNTIMES;
 use self::password::generate_password;
 pub use self::platform::Platform;
@@ -17,7 +19,6 @@ use crate::tempslop::OpenTempFile;
 use crate::tempslop::TempDir;
 use crate::util::mkdir;
 use crate::version::Version;
-use reqwest::Response;
 use std::path::Path;
 use std::path::PathBuf;
 use strum::VariantArray;
@@ -30,72 +31,30 @@ struct DownloadTarget {
     download_url: DownloadUrl,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct FileStructure {
-    nested: bool,
-    platform_first: bool,
-}
-
-impl FileStructure {
-    fn resolve(self, root_dir: &Path, version: Version, platform: Platform) -> PathBuf {
-        match (self.nested, self.platform_first) {
-            (false, false) => root_dir.join(format!("{version}_{platform}")),
-            (false, true) => root_dir.join(format!("{platform}_{version}")),
-            (true, false) => root_dir.join(version.to_string()).join(platform.to_string()),
-            (true, true) => root_dir.join(platform.to_string()).join(version.to_string()),
-        }
-    }
-
-    fn ensure_parent_dir(self, root_dir: &Path, version: Version, platform: Platform) -> MyResult<()> {
-        if !self.nested {
-            return Ok(());
-        }
-        let dir = if self.platform_first {
-            root_dir.join(platform.to_string())
-        } else {
-            root_dir.join(version.to_string())
-        };
-        mkdir(&dir).ctx("Failed to create subdirectory")
-    }
-}
-
 pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
-    let platforms: &[Platform] = if args.platforms.is_empty() {
-        Platform::VARIANTS
-    } else {
-        &args.platforms
-    };
+    if args.list_platforms {
+        for plat in Platform::VARIANTS {
+            println!("{plat}");
+        }
+        return Ok(());
+    }
 
-    println!("Fetching manifest Zeus-Runtime.rss");
+    if args.platforms.contains(&Platform::MacMono) {
+        warn!("This tool does not support downloading mac.mono; see the GitHub README for download links");
+    }
+    validate_versions(&args.versions);
+
     let downloader = Downloader::new()?;
-    let response: Response = downloader
-        .send_request("https://gms.yoyogames.com/Zeus-Runtime.rss")
-        .await
-        .ctx("Failed to fetch Zeus-Runtime.rss manifest")?;
-    let text: String = response.text().await.ctx("Failed to get response text")?;
-    let rss: Rss = text.parse()?;
+    let rss: Rss = fetch_manifest(&downloader).await?;
 
-    let download_targets: Box<[DownloadTarget]> = get_download_targets(rss, &args.versions, platforms)?;
+    let download_targets: Box<[DownloadTarget]> = get_download_targets(rss, &args.versions, &args.platforms)?;
     let count = download_targets.len();
     println!("Got {count} download targets");
 
     mkdir(&args.output_dir).ctx("Failed to create root output directory")?;
 
-    let file_structure = FileStructure {
-        nested: args.nested,
-        platform_first: args.platform_first,
-    };
-    // over-engineered ux stuff or something
-    match detect_existing_structure(&args.output_dir) {
-        Ok(Some(struc)) if struc != file_structure => {
-            // could be a warning ig
-            let error = err!("Existing {struc:?} does not match with provided {file_structure:?}");
-            let note = "Continuing would mess up the nice structure. Either fix your options or choose a different output directory.";
-            return Err(error.ctx(note));
-        }
-        Ok(_) => {}
-        Err(e) => warn!(e, "Failed to detect existing file structure"),
-    }
+    let file_structure = FileStructure::from_args(&args);
+    yap_existing_structure(&args.output_dir, file_structure)?;
 
     // TODO: parallelization
     for (i, download_target) in download_targets.into_iter().enumerate() {
@@ -151,7 +110,11 @@ fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) 
 
         for module in item.enclosure.modules {
             let platform = module.name;
-            if platform == Platform::MacMono || !platforms.contains(&platform) {
+            if platform == Platform::MacMono {
+                continue;
+            }
+            // no platforms specified -> download all
+            if !platforms.is_empty() && !platforms.contains(&platform) {
                 continue;
             }
 
@@ -177,6 +140,61 @@ fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) 
     }
 
     Ok(targets.into_boxed_slice())
+}
+
+async fn fetch_manifest(downloader: &Downloader) -> MyResult<Rss> {
+    println!("Fetching manifest Zeus-Runtime.rss");
+    let text: String = downloader
+        .fetch_text("https://gms.yoyogames.com/Zeus-Runtime.rss")
+        .await
+        .ctx("Failed to fetch Zeus-Runtime.rss manifest")?;
+    text.parse::<Rss>().ctx("Failed to parse Zeus-Runtime.rss XML")
+}
+
+fn validate_versions(versions: &[Version]) {
+    use core::fmt::Write;
+
+    let mut invalids: Vec<Version> = Vec::new();
+    for ver in versions {
+        if !Version::ALL_RUNTIMES.contains(ver) {
+            invalids.push(*ver);
+        }
+    }
+    if invalids.is_empty() {
+        return;
+    }
+
+    let count = invalids.len();
+    if count == 1 {
+        warn!(
+            "Provided version {} is not known to be a valid GameMaker runtime version",
+            invalids[0]
+        );
+        return;
+    }
+
+    let mut buffer = format!("{count} provided versions are not known to be valid GameMaker runtime versions: ");
+    for ver in invalids {
+        let _ = write!(buffer, "{ver}, ");
+    }
+    _ = buffer.pop();
+    _ = buffer.pop();
+    warn!("{buffer}");
+}
+
+/// over-engineered ux stuff or something
+fn yap_existing_structure(root_dir: &Path, provided_struc: FileStructure) -> MyResult<()> {
+    match detect_existing_structure(root_dir) {
+        Ok(Some(detected_struc)) if detected_struc != provided_struc => {
+            // could be a warning ig
+            let error = err!("Existing {detected_struc} does not match with provided {provided_struc}");
+            let note = "Continuing would mess up the nice structure. Either fix your options or choose a different output directory.";
+            return Err(error.ctx(note));
+        }
+        Ok(_) => {}
+        Err(e) => warn!(e, "Failed to detect existing file structure"),
+    }
+    Ok(())
 }
 
 fn detect_existing_structure(root_dir: &Path) -> MyResult<Option<FileStructure>> {
@@ -205,31 +223,19 @@ fn detect_existing_structure(root_dir: &Path) -> MyResult<Option<FileStructure>>
 }
 
 fn test_structure(name: &str) -> Option<FileStructure> {
-    if name.parse::<Version>().is_ok() {
-        return Some(FileStructure {
-            nested: true,
-            platform_first: false,
-        });
+    if is_version(name) {
+        return Some(FileStructure::NESTED_VERSION_FIRST);
     }
-    if name.parse::<Platform>().is_ok() {
-        return Some(FileStructure {
-            nested: true,
-            platform_first: true,
-        });
+    if is_platform(name) {
+        return Some(FileStructure::NESTED_PLATFORM_FIRST);
     }
 
     let (a, b) = name.split_once('_')?;
     if is_version(a) && is_platform(b) {
-        return Some(FileStructure {
-            nested: false,
-            platform_first: false,
-        });
+        return Some(FileStructure::FLAT_VERSION_FIRST);
     }
     if is_platform(a) && is_version(b) {
-        return Some(FileStructure {
-            nested: false,
-            platform_first: true,
-        });
+        return Some(FileStructure::FLAT_PLATFORM_FIRST);
     }
 
     None

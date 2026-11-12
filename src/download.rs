@@ -25,7 +25,7 @@ impl Downloader {
         Ok(Self { client })
     }
 
-    pub async fn send_request(&self, url: impl IntoUrl) -> MyResult<Response> {
+    pub async fn send_get_request(&self, url: impl IntoUrl) -> MyResult<Response> {
         let url = url.as_str();
         self.client
             .get(url)
@@ -36,8 +36,13 @@ impl Downloader {
             .ctx(|| format!("Recieved non-success HTTP response code for GET request to {url}"))
     }
 
+    pub async fn fetch_text(&self, url: impl IntoUrl) -> MyResult<String> {
+        let resp: Response = self.send_get_request(url).await?;
+        resp.text().await.ctx("Failed to get response text")
+    }
+
     pub async fn download(&self, url: impl IntoUrl, target_dir: &Path) -> MyResult<OpenTempFile> {
-        let mut response: Response = self.send_request(url).await?;
+        let mut response: Response = self.send_get_request(url).await?;
         let content_length = response
             .content_length()
             .ctx("No content length specified; possibly a 404 page")?;

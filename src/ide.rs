@@ -75,7 +75,7 @@ fn get_download_targets(args: &DownloadIdeArgs) -> Vec<DownloadTarget> {
     if args.versions.is_empty() {
         let mut existing_versions = Vec::new();
         let mut versions: Vec<DownloadTarget> = Vec::new();
-        for &version in Version::ALL {
+        for &version in Version::ALL_IDES {
             if known_missing_version(version) {
                 continue;
             }
@@ -105,7 +105,7 @@ fn get_download_targets(args: &DownloadIdeArgs) -> Vec<DownloadTarget> {
     let mut existing_versions = Vec::new();
 
     for version in provided_versions {
-        if !Version::ALL.contains(&version) {
+        if !Version::ALL_IDES.contains(&version) {
             invalid_versions.push(version);
             continue;
         }
@@ -147,7 +147,7 @@ fn report_bad_versions(bad_versions: &[Version], wgat: &'static str) {
     if count == 0 {
         return;
     }
-    let s = if count == 1 { "s" } else { "" };
+    let s = if count == 1 { "" } else { "s" };
     let mut buffer = format!("Skipping {count} {wgat} version{s}: ");
     for ver in bad_versions {
         let _ = write!(buffer, "{ver}, ");

@@ -28,7 +28,6 @@ Of all **217** GameMaker IDE versions, this tool can download **164** (the rest 
 5. Run the program: `./target/release/gmhistory`
 
 To understand the program better, call it with `--help` on a subcommand, like `./gmhistory download-ides --help`.
-In order to customize the output directory, use the `-o` flag.
 
 ### Getting 7-Zip
 
