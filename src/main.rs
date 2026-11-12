@@ -1,4 +1,4 @@
-mod download;
+mod net;
 mod error;
 mod extract;
 mod ide;

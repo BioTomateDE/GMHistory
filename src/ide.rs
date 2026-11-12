@@ -1,6 +1,6 @@
 use crate::DownloadIdeArgs;
-use crate::download::download;
-use crate::download::init_client;
+use crate::net::download;
+use crate::net::init_client;
 use crate::error::*;
 use crate::extract::invoke_7zip;
 use crate::extract::probe_7zip;
