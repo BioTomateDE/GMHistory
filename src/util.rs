@@ -1,7 +1,6 @@
 use crate::error::*;
 use std::fs::FileType;
 use std::io::ErrorKind;
-use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 
 fn ignore_kind(result: std::io::Result<()>, kind: ErrorKind) -> MyResult<()> {
@@ -34,13 +33,26 @@ pub fn mkdir(path: &Path) -> MyResult<()> {
 }
 
 fn file_kind(file_type: FileType) -> &'static str {
+    if file_type.is_file() {
+        return "file";
+    }
     if file_type.is_dir() {
-        "directory"
-    } else if file_type.is_file() {
-        "file"
-    } else if file_type.is_symlink() {
-        "symlink"
-    } else if file_type.is_block_device() {
+        return "directory";
+    }
+    if file_type.is_symlink() {
+        return "symlink";
+    }
+    cfg_select! {
+        unix => unix_file_kind(file_type),
+        _ => "<unknown file type>",
+    }
+}
+
+#[cfg(unix)]
+fn unix_file_kind(file_type: FileType) -> &'static str {
+    use std::os::unix::fs::FileTypeExt;
+
+    if file_type.is_block_device() {
         "block device"
     } else if file_type.is_char_device() {
         "char device"
