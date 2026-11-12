@@ -128,7 +128,7 @@ fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) 
             targets.push(target);
         }
 
-        if !platforms.contains(&Platform::Root) {
+        if !platforms.is_empty() && !platforms.contains(&Platform::Root) {
             continue;
         }
         let target = DownloadTarget {
