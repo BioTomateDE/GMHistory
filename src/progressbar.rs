@@ -15,17 +15,13 @@ const STYLE_TOTAL: &str = "{msg:36!} {prefix:10!} {eta_precise} [{wide_bar}] {pe
 /// Files that are e.g. 45% progress the total bar length by 45/100 * SCALE.
 const SCALE: u64 = 1000;
 
-static BAR_MULTI: LazyLock<MultiProgress> =
+pub static BAR_MULTI: LazyLock<MultiProgress> =
     LazyLock::new(|| MultiProgress::with_draw_target(ProgressDrawTarget::stderr_with_hz(3)));
 static BAR_TOTAL: LazyLock<ProgressBar> =
     LazyLock::new(|| BAR_MULTI.add(ProgressBar::new(0).with_style(bar_style(STYLE_TOTAL))));
 
 static FILES_TOTAL: AtomicUsize = AtomicUsize::new(0);
 static FILES_DONE: AtomicUsize = AtomicUsize::new(0);
-
-pub fn bar_println(msg: impl core::fmt::Display) {
-    BAR_MULTI.suspend(|| eprintln!("{msg}"));
-}
 
 fn bar_style(style: &'static str) -> ProgressStyle {
     ProgressStyle::with_template(style)

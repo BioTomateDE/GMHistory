@@ -22,19 +22,6 @@ impl Error {
         self.message = message.into_string();
         self
     }
-
-    pub const fn display(&'_ self, level: Level) -> ErrorDisplay<'_> {
-        ErrorDisplay { error: self, level }
-    }
-
-    pub fn print(&self, level: Level) {
-        bar_println!("{}", self.display(level));
-    }
-
-    pub fn exit(&self) -> ! {
-        self.print(Level::Error);
-        std::process::exit(1);
-    }
 }
 
 impl fmt::Display for Error {
@@ -48,57 +35,6 @@ impl fmt::Display for Error {
     }
 }
 
-// impl core::error::Error for Error {}
-
-///////////////////////////////////////////////////////////////////////////////
-#[derive(Debug, Clone)]
-pub struct ErrorDisplay<'a> {
-    error: &'a Error,
-    level: Level,
-}
-
-impl fmt::Display for ErrorDisplay<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}: {}{}{}",
-            self.level.name(),
-            self.level.ansi_style(),
-            self.error,
-            Level::RESET_STYLE
-        )
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Level {
-    Info,
-    Warn,
-    Error,
-}
-
-impl Level {
-    const RESET_STYLE: &str = "\x1B[0m";
-
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Info => "Info",
-            Self::Warn => "Warning",
-            Self::Error => "Error",
-        }
-    }
-
-    const fn ansi_style(self) -> &'static str {
-        match self {
-            Self::Info => "\x1B[34m", // Blue
-            Self::Warn => "\x1B[33m",  // Yellow
-            Self::Error => "\x1B[31m", // Red
-        }
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
 pub trait IntoString {
     fn into_string(self) -> String;
 }
@@ -196,22 +132,22 @@ macro_rules! bail {
 
 #[clippy::format_args]
 macro_rules! warning {
-    ($error:ident, $($arg:tt)*) => {
-        $crate::error::Error::from($error).ctx(format!($($arg)*)).print($crate::error::Level::Warn)
-    };
     ($($arg:tt)*) => {
-        $crate::error::Error::new(format!($($arg)*)).print($crate::error::Level::Warn)
+        $crate::error::log!(Warn, $($arg)*)
     };
 }
 
 #[clippy::format_args]
-macro_rules! bar_println {
-    ($($arg:tt)*) => {
-        $crate::progressbar::bar_println(format_args!( $($arg)* ))
+macro_rules! log {
+    ($level:ident, $error:ident, $($arg:tt)*) => {
+        ::log::log!(::log::Level::$level, "{}", $crate::error::Error::from($error).ctx(format!($($arg)*)))
+    };
+    ($level:ident, $($arg:tt)*) => {
+        ::log::log!(::log::Level::$level, $($arg)*)
     };
 }
 
 pub(crate) use bail;
-pub(crate) use bar_println;
 pub(crate) use err;
+pub(crate) use log;
 pub(crate) use warning as warn;

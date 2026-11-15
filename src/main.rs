@@ -2,6 +2,7 @@ mod asyncslop;
 mod error;
 mod extract;
 mod ide;
+mod logger;
 mod net;
 mod progressbar;
 mod runtime;
@@ -9,8 +10,11 @@ mod tempslop;
 mod util;
 mod version;
 
+use crate::error::MyResult;
 use crate::ide::download_ides;
+use crate::logger::init_logger;
 use crate::runtime::download_runtimes;
+use crate::tempslop::set_ctrlc_handler;
 use crate::version::Version;
 use clap::Parser;
 use clap::Subcommand;
@@ -93,14 +97,16 @@ struct DownloadRuntimeArgs {
 
 #[tokio::main]
 async fn main() {
+    init_logger();
     let args = Args::parse();
-    tempslop::set_ctrlc_handler();
-    let result: error::MyResult<()> = match args.command {
+    set_ctrlc_handler();
+    let result: MyResult<()> = match args.command {
         Command::DownloadIdes(args) => download_ides(args).await,
         Command::DownloadRuntimes(args) => download_runtimes(args).await,
         Command::UpgradeGms1 => todo!(),
     };
     if let Err(error) = result {
-        error.exit();
+        log::error!("{error}");
+        std::process::exit(1);
     }
 }

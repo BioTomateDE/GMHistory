@@ -9,6 +9,7 @@ use crate::tempslop::OpenTempFile;
 use crate::tempslop::TempDir;
 use crate::util::mkdir;
 use crate::version::Version;
+use log::Level;
 use std::path::Path;
 use std::path::PathBuf;
 use tokio::task::AbortHandle;
@@ -40,7 +41,7 @@ pub async fn download_ides(mut args: DownloadIdeArgs) -> MyResult<()> {
 
     let downloads: Vec<DownloadTarget> = get_download_targets(&mut args); // clears args.versions
     let count = downloads.len();
-    println!("Downloading {count} IDEs");
+    log::info!("Downloading {count} IDEs");
     crate::progressbar::set_download_count(count);
 
     let mut tasks = JoinSet::new();
@@ -57,7 +58,7 @@ pub async fn download_ides(mut args: DownloadIdeArgs) -> MyResult<()> {
         }
     }
 
-    bar_println!("All done!");
+    log::info!("All done!");
     Ok(())
 }
 
@@ -186,7 +187,7 @@ fn report_bad_versions(bad_versions: &[Version], wgat: &'static str, level: Leve
     if count > MAX {
         _ = write!(string, " and {} more", count - MAX);
     }
-    Error::new(string).print(level);
+    log::log!(level, "{string}");
 }
 
 /// Some versions weren't recorded by archive.org :(

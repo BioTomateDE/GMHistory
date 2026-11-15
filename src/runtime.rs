@@ -68,7 +68,7 @@ pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
         } = download_target;
 
         if LOST_RUNTIMES.contains(&download_url.uuid) {
-            bar_println!(
+            log::warn!(
                 "Runtime {version} for {platform} ({}) is known to be missing from the CDN; skipping it",
                 download_url.uuid.hyphenated()
             );
@@ -81,7 +81,7 @@ pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
         }
 
         let url = download_url.to_url();
-        bar_println!("({}/{}) Downloading {version} for {platform} from {url}", i + 1, count);
+        log::info!("({}/{}) Downloading {version} for {platform} from {url}", i + 1, count);
         // TODO: FIX THIS
         let open_temp_file: OpenTempFile = download(&url, &args.output_dir, &DownloadBar::new("asdasgf".to_owned()))
             .await
@@ -89,7 +89,7 @@ pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
 
         let archive_dir = TempDir::new(&args.output_dir)?;
         let password: String = generate_password(download_url.uuid);
-        bar_println!("Extracting {version} ({platform}) with password {password:?}");
+        log::info!("Extracting {version} ({platform}) with password {password:?}");
         invoke_7zip(open_temp_file.path(), archive_dir.path(), Some(&password))
             .await
             .ctx(|| format!("Failed to extract {version} ({platform}) with password {password:?}"))?;
