@@ -32,7 +32,6 @@ struct Args {
 enum Command {
     DownloadIdes(DownloadIdeArgs),
     DownloadRuntimes(DownloadRuntimeArgs),
-    UpgradeGms1,
 }
 
 /// Download GameMaker IDE installers and potentially extract them.
@@ -101,7 +100,6 @@ async fn main() {
     let result: MyResult<()> = match args.command {
         Command::DownloadIdes(args) => download_ides(args).await,
         Command::DownloadRuntimes(args) => download_runtimes(args).await,
-        Command::UpgradeGms1 => todo!(),
     };
     crate::progressbar::BAR_TOTAL.finish_and_clear();
     if let Err(error) = result {
