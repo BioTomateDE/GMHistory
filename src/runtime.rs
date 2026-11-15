@@ -12,11 +12,12 @@ pub use self::platform::Platform;
 use self::rss::Rss;
 use self::url::DownloadUrl;
 use crate::DownloadRuntimeArgs;
+use crate::error::*;
+use crate::extract::invoke_7zip;
 use crate::net::download;
 use crate::net::fetch_text;
 use crate::net::init_client;
-use crate::error::*;
-use crate::extract::invoke_7zip;
+use crate::progressbar::DownloadBar;
 use crate::tempslop::OpenTempFile;
 use crate::tempslop::TempDir;
 use crate::util::mkdir;
@@ -67,7 +68,7 @@ pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
         } = download_target;
 
         if LOST_RUNTIMES.contains(&download_url.uuid) {
-            println!(
+            bar_println!(
                 "Runtime {version} for {platform} ({}) is known to be missing from the CDN; skipping it",
                 download_url.uuid.hyphenated()
             );
@@ -80,15 +81,17 @@ pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
         }
 
         let url = download_url.to_url();
-        println!("({}/{}) Downloading {version} for {platform} from {url}", i + 1, count);
-        let open_temp_file: OpenTempFile = download(&url, &args.output_dir)
+        bar_println!("({}/{}) Downloading {version} for {platform} from {url}", i + 1, count);
+        // TODO: FIX THIS
+        let open_temp_file: OpenTempFile = download(&url, &args.output_dir, &DownloadBar::new("asdasgf".to_owned()))
             .await
             .ctx(|| format!("Failed to download {version} for {platform} from {url}"))?;
 
         let archive_dir = TempDir::new(&args.output_dir)?;
         let password: String = generate_password(download_url.uuid);
-        println!("Extracting {version} ({platform}) with password {password:?}");
+        bar_println!("Extracting {version} ({platform}) with password {password:?}");
         invoke_7zip(open_temp_file.path(), archive_dir.path(), Some(&password))
+            .await
             .ctx(|| format!("Failed to extract {version} ({platform}) with password {password:?}"))?;
         drop(open_temp_file);
 
@@ -208,7 +211,7 @@ fn detect_existing_structure(root_dir: &Path) -> MyResult<Option<FileStructure>>
 
         let name = entry.file_name();
         let Some(name) = name.to_str() else {
-            bail!("Non UTF-8 subdirectory name {name:?}");
+            bail!("Non UTF-8 subdirectory name");
         };
         if name.starts_with('.') {
             continue;

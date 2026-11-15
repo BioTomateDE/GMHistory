@@ -27,5 +27,5 @@ reqwest = "0.13.5"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_path_to_error = "0.1.20"
 strum = { version = "0.28.0", features = ["derive"] }
-tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.53.2", features = ["macros", "process", "rt-multi-thread", "sync"] }
 uuid = { version = "1.29.2", features = ["serde"] }

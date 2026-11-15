@@ -1,7 +1,9 @@
-mod net;
+mod asyncslop;
 mod error;
 mod extract;
 mod ide;
+mod net;
+mod progressbar;
 mod runtime;
 mod tempslop;
 mod util;
@@ -29,7 +31,7 @@ enum Command {
 }
 
 /// Download GameMaker IDE installers and potentially extract them.
-#[derive(Debug, Parser)]
+#[derive(Debug, Clone, Parser)]
 struct DownloadIdeArgs {
     /// The directory where IDEs will be collected.
     #[arg(long, short, default_value = "gamemaker-ides")]
@@ -98,7 +100,6 @@ async fn main() {
         Command::DownloadRuntimes(args) => download_runtimes(args).await,
         Command::UpgradeGms1 => todo!(),
     };
-    tempslop::cleanup(); // TODO: not needed i think
     if let Err(error) = result {
         error.exit();
     }

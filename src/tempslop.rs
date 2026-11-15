@@ -1,6 +1,5 @@
 use crate::error::*;
 use crate::util::ignore_notfound;
-use crate::warn;
 use std::fs::File;
 use std::path::Path;
 use std::path::PathBuf;
