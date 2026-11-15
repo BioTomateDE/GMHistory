@@ -1,4 +1,5 @@
 use crate::DownloadIdeArgs;
+use crate::IdeEvolution;
 use crate::error::*;
 use crate::extract::invoke_7zip;
 use crate::extract::probe_7zip;
@@ -28,12 +29,8 @@ struct DownloadTarget {
 }
 
 pub async fn download_ides(mut args: DownloadIdeArgs) -> MyResult<()> {
-    if args.extract && !probe_7zip() {
+    if args.evolution >= IdeEvolution::Extract && !probe_7zip() {
         bail!("You need to install 7-Zip (command 7z not found)");
-    }
-
-    if args.upgrade && !args.extract {
-        warn!("Option --upgrade has no effect without --extract");
     }
 
     init_client();
@@ -86,7 +83,7 @@ async fn download_ide_impl(download_target: &DownloadTarget, args: DownloadIdeAr
         .await
         .ctx(|| format!("Failed to download IDE {version} from {url}"))?;
 
-    if !args.extract {
+    if args.evolution < IdeEvolution::Extract {
         temp_download_file.rename(path)?;
         return Ok(());
     }
@@ -97,7 +94,7 @@ async fn download_ide_impl(download_target: &DownloadTarget, args: DownloadIdeAr
     invoke_7zip(temp_download_file.path(), archive_dir.path(), None).await?;
     drop(temp_download_file);
 
-    if args.upgrade && version.0 == 1 {
+    if args.evolution == IdeEvolution::Upgrade && version.0 == 1 {
         let another_tempdir = TempDir::new(&args.output_dir)?;
         let upgrade_zip = gms1_upgrade_zip_path(*version, archive_dir.path());
         invoke_7zip(&upgrade_zip, another_tempdir.path(), Some(GMS1_PASSWORD)).await?;
@@ -169,12 +166,10 @@ fn get_download_targets(args: &mut DownloadIdeArgs) -> Vec<DownloadTarget> {
 }
 
 fn version_get_path(version: Version, url: &str, args: &DownloadIdeArgs) -> PathBuf {
-    let name: String = if args.extract {
-        version.to_string() // directory
-    } else if args.keep_name {
-        url.rsplit_once('/').unwrap().1.to_owned()
-    } else {
-        format!("{version}.exe")
+    let name: String = match args.evolution {
+        IdeEvolution::OriginalInstallers => url.rsplit_once('/').unwrap().1.to_owned(),
+        IdeEvolution::RenamedInstallers => format!("{version}.exe"),
+        IdeEvolution::Extract | IdeEvolution::Upgrade => version.to_string(), // directory
     };
     args.output_dir.join(name)
 }

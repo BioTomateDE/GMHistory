@@ -40,7 +40,6 @@ pub struct Item {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Enclosure {
-    // TODO: make sure to use this too???
     #[serde(rename = "@url")]
     pub url: DownloadUrl,
 

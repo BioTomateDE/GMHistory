@@ -38,6 +38,9 @@ enum Command {
 /// Download GameMaker IDE installers and potentially extract them.
 #[derive(Debug, Clone, Parser)]
 struct DownloadIdeArgs {
+    #[arg(value_enum, default_value_t = IdeEvolution::Upgrade)]
+    evolution: IdeEvolution,
+
     /// The directory where IDEs will be collected.
     #[arg(long, short, default_value = "gamemaker-ides")]
     output_dir: PathBuf,
@@ -46,20 +49,23 @@ struct DownloadIdeArgs {
     /// If unspecified, download all.
     #[arg(long, short)]
     versions: Vec<Version>,
+}
 
-    /// Extract the archive contained in the installers.
-    #[arg(long, short = 'x')]
-    extract: bool,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, clap::ValueEnum)]
+enum IdeEvolution {
+    /// Only download installers, keep original filenames.
+    ///
+    /// Filenames can be `GMStudio-Installer-{version}.exe`, `GameMakerStudio-Installer-{version}.exe` or `GameMaker-Installer-{version}.exe`.
+    OriginalInstallers,
 
-    /// Replace GM:S 1 IDEs with their extracted upgrade zip.
-    /// Only has an effect if `--extract` is specified.
-    #[arg(long, short)]
-    upgrade: bool,
+    /// Only download installers and normalize filesnames to `{version}.exe`.
+    RenamedInstallers,
 
-    /// Keep the original installer filename instead of renaming to `{version}.exe`.
-    /// Has no effect if `--extract` is specified.
-    #[arg(long, short)]
-    keep_name: bool,
+    /// Extract installer archive (only free version; kinda useless).
+    Extract,
+
+    /// Extract password-protected UpgradeZip in the installer archive
+    Upgrade,
 }
 
 /// Downloads GameMaker runtimes (GMS2+).
