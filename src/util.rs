@@ -64,4 +64,3 @@ fn unix_file_kind(file_type: FileType) -> &'static str {
         "<unknown file type>"
     }
 }
-

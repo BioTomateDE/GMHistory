@@ -17,7 +17,7 @@ const SCALE: u64 = 1000;
 
 pub static BAR_MULTI: LazyLock<MultiProgress> =
     LazyLock::new(|| MultiProgress::with_draw_target(ProgressDrawTarget::stderr_with_hz(3)));
-static BAR_TOTAL: LazyLock<ProgressBar> =
+pub static BAR_TOTAL: LazyLock<ProgressBar> =
     LazyLock::new(|| BAR_MULTI.add(ProgressBar::new(0).with_style(bar_style(STYLE_TOTAL))));
 
 static FILES_TOTAL: AtomicUsize = AtomicUsize::new(0);

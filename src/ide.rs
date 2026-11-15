@@ -41,6 +41,9 @@ pub async fn download_ides(mut args: DownloadIdeArgs) -> MyResult<()> {
 
     let downloads: Vec<DownloadTarget> = get_download_targets(&mut args); // clears args.versions
     let count = downloads.len();
+    if count == 0 {
+        return Ok(());
+    }
     log::info!("Downloading {count} IDEs");
     crate::progressbar::set_download_count(count);
 
@@ -53,7 +56,7 @@ pub async fn download_ides(mut args: DownloadIdeArgs) -> MyResult<()> {
     while let Some(joined) = tasks.join_next().await {
         match joined {
             Ok(Ok(())) => {}
-            Ok(Err(e)) => return Err(e),
+            Ok(Err(e)) => log::log!(log::Level::Error, "{e}"),
             Err(e) => bail!(e, "Task panicked"),
         }
     }
@@ -64,10 +67,16 @@ pub async fn download_ides(mut args: DownloadIdeArgs) -> MyResult<()> {
 
 async fn download_ide(download_target: DownloadTarget, args: DownloadIdeArgs) -> MyResult<()> {
     let DownloadTarget { version, url, path: _ } = &download_target;
-    let bar = DownloadBar::new(format!("IDE {version}"));
+    let name = if url.contains("archive.org") {
+        // good enough for me
+        format!("IDE {version} (archive.org)")
+    } else {
+        format!("IDE {version}")
+    };
+    let bar = DownloadBar::new(name);
     download_ide_impl(&download_target, args, &bar)
         .await
-        .ctx(|| format!("Failed to download {version} from {url}"))?;
+        .ctx(|| format!("Failed to download IDE {version} from {url}"))?;
     Ok(())
 }
 
@@ -152,7 +161,7 @@ fn get_download_targets(args: &mut DownloadIdeArgs) -> Vec<DownloadTarget> {
         }
     }
 
-    report_bad_versions(&invalid_versions, "invalid", Level::Error);
+    report_bad_versions(&invalid_versions, "invalid", Level::Warn);
     report_bad_versions(&missing_versions, "missing", Level::Warn);
     report_bad_versions(&existing_versions, "already downloaded", Level::Info);
 
@@ -171,8 +180,8 @@ fn version_get_path(version: Version, url: &str, args: &DownloadIdeArgs) -> Path
 }
 
 fn report_bad_versions(bad_versions: &[Version], wgat: &'static str, level: Level) {
-    const MAX: usize = 12;
     use core::fmt::Write;
+    const MAX: usize = 12;
     let count = bad_versions.len();
     if count == 0 {
         return;

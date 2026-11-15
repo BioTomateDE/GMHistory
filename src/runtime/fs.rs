@@ -1,4 +1,3 @@
-use crate::DownloadRuntimeArgs;
 use crate::error::*;
 use crate::runtime::Platform;
 use crate::util::mkdir;
@@ -7,37 +6,22 @@ use std::fmt;
 use std::path::Path;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, clap::Args)]
 pub struct FileStructure {
-    nested: bool,
-    platform_first: bool,
+    /// Create a nested directory structure (version/platform)
+    /// instead of a flat one joined with an underscore.
+    #[arg(long)]
+    pub nested: bool,
+
+    /// Put the platform before the version in output directory names.
+    ///
+    /// Flat: `{platform}_{version}` instead of `{version}_{platform}`.
+    /// With `--nested`: `{platform}/{version}` instead of `{version}/{platform}`.
+    #[arg(long)]
+    pub platform_first: bool,
 }
 
 impl FileStructure {
-    pub const FLAT_VERSION_FIRST: Self = Self {
-        nested: false,
-        platform_first: false,
-    };
-    pub const NESTED_VERSION_FIRST: Self = Self {
-        nested: true,
-        platform_first: false,
-    };
-    pub const FLAT_PLATFORM_FIRST: Self = Self {
-        nested: false,
-        platform_first: true,
-    };
-    pub const NESTED_PLATFORM_FIRST: Self = Self {
-        nested: true,
-        platform_first: true,
-    };
-
-    pub const fn from_args(args: &DownloadRuntimeArgs) -> Self {
-        Self {
-            nested: args.nested,
-            platform_first: args.platform_first,
-        }
-    }
-
     pub fn resolve(self, root_dir: &Path, version: Version, platform: Platform) -> PathBuf {
         match (self.nested, self.platform_first) {
             (false, false) => root_dir.join(format!("{version}_{platform}")),
@@ -62,8 +46,8 @@ impl FileStructure {
 
 impl fmt::Display for FileStructure {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let nestness = if self.nested { "Nested" } else { "Flat" };
+        let nestness = if self.nested { "nested" } else { "flat" };
         let firstness = if self.platform_first { "platform" } else { "version" };
-        write!(f, "{nestness} file structure with {firstness} first")
+        write!(f, "{{{nestness} file structure with {firstness} first}}")
     }
 }

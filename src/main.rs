@@ -14,6 +14,7 @@ use crate::error::MyResult;
 use crate::ide::download_ides;
 use crate::logger::init_logger;
 use crate::runtime::download_runtimes;
+use crate::runtime::fs::FileStructure;
 use crate::tempslop::set_ctrlc_handler;
 use crate::version::Version;
 use clap::Parser;
@@ -62,7 +63,7 @@ struct DownloadIdeArgs {
 }
 
 /// Downloads GameMaker runtimes (GMS2+).
-#[derive(Debug, Parser)]
+#[derive(Debug, Clone, Parser)]
 struct DownloadRuntimeArgs {
     /// The directory where runtimes will be collected.
     #[arg(long, short, default_value = "gamemaker-runtimes")]
@@ -82,17 +83,8 @@ struct DownloadRuntimeArgs {
     #[arg(long)]
     list_platforms: bool,
 
-    /// Create a nested directory structure (version/platform)
-    /// instead of a flat one joined with an underscore.
-    #[arg(long)]
-    nested: bool,
-
-    /// Put the platform before the version in output directory names.
-    ///
-    /// Flat: `{platform}_{version}` instead of `{version}_{platform}`.
-    /// With `--nested`: `{platform}/{version}` instead of `{version}/{platform}`.
-    #[arg(long)]
-    platform_first: bool,
+    #[command(flatten)]
+    file_structure: FileStructure,
 }
 
 #[tokio::main]
@@ -105,6 +97,7 @@ async fn main() {
         Command::DownloadRuntimes(args) => download_runtimes(args).await,
         Command::UpgradeGms1 => todo!(),
     };
+    crate::progressbar::BAR_TOTAL.finish_and_clear();
     if let Err(error) = result {
         log::error!("{error}");
         std::process::exit(1);

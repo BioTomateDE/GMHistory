@@ -1,9 +1,8 @@
+use crate::progressbar::BAR_MULTI;
 use log::LevelFilter;
 use log::Log;
 use log::Metadata;
 use log::Record;
-
-use crate::progressbar::BAR_MULTI;
 
 struct BarLogger<L: Log>(L);
 

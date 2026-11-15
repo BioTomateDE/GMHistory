@@ -1,17 +1,22 @@
-use reqwest::Client;
-use reqwest::IntoUrl;
-use reqwest::Response;
-
-use crate::asyncslop::ARCHIVEORG_LIMIT;
-use crate::asyncslop::DOWNLOAD_LIMIT;
+use crate::asyncslop::get_download_limit;
 use crate::error::*;
 use crate::progressbar::DownloadBar;
 use crate::tempslop::OpenTempFile;
+use reqwest::Client;
+use reqwest::IntoUrl;
+use reqwest::Response;
 use std::io::Write;
 use std::path::Path;
 use std::sync::LazyLock;
 
-static CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
+static CLIENT: LazyLock<Client> = LazyLock::new(make_client);
+
+fn make_client() -> Client {
+    Client::builder()
+        .user_agent("GMHistory (Rust reqwest)")
+        .build()
+        .unwrap()
+}
 
 /// Panic early if something's wrong
 pub fn init_client() {
@@ -36,12 +41,7 @@ pub async fn fetch_text(url: impl IntoUrl) -> MyResult<String> {
 
 pub async fn download(url: impl IntoUrl, target_dir: &Path, bar: &DownloadBar) -> MyResult<OpenTempFile> {
     let url: reqwest::Url = url.into_url().ctx("Bad URL")?;
-    let domain: &str = url.domain().ctx("Domaing missing")?;
-    let limit = if domain == "archive.org" || domain.ends_with(".archive.org") {
-        &ARCHIVEORG_LIMIT
-    } else {
-        &DOWNLOAD_LIMIT
-    };
+    let limit = get_download_limit(&url);
     let _permit = limit.acquire().await.unwrap();
 
     let mut response: Response = send_get_request(url).await?;

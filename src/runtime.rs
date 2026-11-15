@@ -1,4 +1,4 @@
-mod fs;
+pub mod fs;
 mod lost;
 mod password;
 mod platform;
@@ -24,7 +24,10 @@ use crate::util::mkdir;
 use crate::version::Version;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
 use strum::VariantArray;
+use tokio::task::AbortHandle;
+use tokio::task::JoinSet;
 
 // TODO: use `dsaSignature` and `length` for validation maybe?
 #[derive(Debug, Clone)]
@@ -34,11 +37,14 @@ struct DownloadTarget {
     download_url: DownloadUrl,
 }
 
-pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
+pub async fn download_runtimes(mut args: DownloadRuntimeArgs) -> MyResult<()> {
     if args.list_platforms {
         for plat in Platform::VARIANTS {
             println!("{plat}");
         }
+        eprintln!();
+        eprintln!("Note: `ROOT` isn't a real platform; it refers to the download URL in the RSS enclosure tag itself");
+        // honestly i havent looked in to what this thing actually stores/represents
         return Ok(());
     }
 
@@ -51,54 +57,75 @@ pub async fn download_runtimes(args: DownloadRuntimeArgs) -> MyResult<()> {
     let rss: Rss = fetch_manifest().await?;
 
     let download_targets: Box<[DownloadTarget]> = get_download_targets(rss, &args.versions, &args.platforms)?;
+    args.versions.clear();
     let count = download_targets.len();
-    println!("Got {count} download targets");
+    crate::progressbar::set_download_count(count);
+    log::info!("Got {count} download targets");
 
     mkdir(&args.output_dir).ctx("Failed to create root output directory")?;
+    yap_existing_structure(&args.output_dir, args.file_structure)?;
 
-    let file_structure = FileStructure::from_args(&args);
-    yap_existing_structure(&args.output_dir, file_structure)?;
-
-    // TODO: parallelization
-    for (i, download_target) in download_targets.into_iter().enumerate() {
-        let DownloadTarget {
-            version,
-            platform,
-            download_url,
-        } = download_target;
-
-        if LOST_RUNTIMES.contains(&download_url.uuid) {
-            log::warn!(
-                "Runtime {version} for {platform} ({}) is known to be missing from the CDN; skipping it",
-                download_url.uuid.hyphenated()
-            );
-            continue;
-        }
-
-        let output_dir: PathBuf = file_structure.resolve(&args.output_dir, version, platform);
-        if output_dir.exists() {
-            continue;
-        }
-
-        let url = download_url.to_url();
-        log::info!("({}/{}) Downloading {version} for {platform} from {url}", i + 1, count);
-        // TODO: FIX THIS
-        let open_temp_file: OpenTempFile = download(&url, &args.output_dir, &DownloadBar::new("asdasgf".to_owned()))
-            .await
-            .ctx(|| format!("Failed to download {version} for {platform} from {url}"))?;
-
-        let archive_dir = TempDir::new(&args.output_dir)?;
-        let password: String = generate_password(download_url.uuid);
-        log::info!("Extracting {version} ({platform}) with password {password:?}");
-        invoke_7zip(open_temp_file.path(), archive_dir.path(), Some(&password))
-            .await
-            .ctx(|| format!("Failed to extract {version} ({platform}) with password {password:?}"))?;
-        drop(open_temp_file);
-
-        file_structure.ensure_parent_dir(&args.output_dir, version, platform)?;
-        archive_dir.rename(&output_dir)?;
+    let mut tasks = JoinSet::new();
+    let args = Arc::new(args);
+    for download_target in download_targets {
+        let args = Arc::clone(&args);
+        let _: AbortHandle = tasks.spawn(async move { download_runtime(download_target, args).await });
     }
 
+    while let Some(joined) = tasks.join_next().await {
+        match joined {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => log::log!(log::Level::Error, "{e}"),
+            Err(e) => bail!(e, "Task panicked"),
+        }
+    }
+
+    log::info!("All done!");
+    Ok(())
+}
+
+async fn download_runtime(download_target: DownloadTarget, args: Arc<DownloadRuntimeArgs>) -> MyResult<()> {
+    let DownloadTarget { version, platform, .. } = download_target;
+    let name = format!("{version} {platform}");
+    let bar = DownloadBar::new(name);
+    download_runtime_impl(download_target, args, &bar)
+        .await
+        .ctx(|| format!("Failed to download runtime {version} for {platform}"))?;
+    Ok(())
+}
+
+async fn download_runtime_impl(
+    download_target: DownloadTarget,
+    args: Arc<DownloadRuntimeArgs>,
+    bar: &DownloadBar,
+) -> MyResult<()> {
+    let DownloadTarget {
+        version,
+        platform,
+        download_url,
+    } = download_target;
+
+    let output_dir: PathBuf = args.file_structure.resolve(&args.output_dir, version, platform);
+    if output_dir.exists() {
+        return Ok(());
+    }
+
+    let url = download_url.to_url();
+    let open_temp_file: OpenTempFile = download(&url, &args.output_dir, bar)
+        .await
+        .ctx(|| format!("Failed to download {version} for {platform} from {url}"))?;
+
+    let archive_dir = TempDir::new(&args.output_dir)?;
+    let password: String = generate_password(download_url.uuid);
+    log::debug!("Extracting {version} ({platform}) with password {password:?}");
+    invoke_7zip(open_temp_file.path(), archive_dir.path(), Some(&password))
+        .await
+        .ctx(|| format!("Failed to extract {version} ({platform}) with password {password:?}"))?;
+    drop(open_temp_file);
+
+    args.file_structure
+        .ensure_parent_dir(&args.output_dir, version, platform)?;
+    archive_dir.rename(&output_dir)?;
     Ok(())
 }
 
@@ -124,6 +151,11 @@ fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) 
 
             let download_url = DownloadUrl::try_from(module.url.as_str())
                 .ctx(|| format!("Failed to parse download URL for {version} {platform}"))?;
+
+            if LOST_RUNTIMES.contains(&download_url.uuid) {
+                continue;
+            }
+
             let target = DownloadTarget {
                 version,
                 platform,
@@ -147,7 +179,7 @@ fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) 
 }
 
 async fn fetch_manifest() -> MyResult<Rss> {
-    println!("Fetching manifest Zeus-Runtime.rss");
+    log::info!("Fetching manifest Zeus-Runtime.rss");
     let text: String = fetch_text("https://gms.yoyogames.com/Zeus-Runtime.rss")
         .await
         .ctx("Failed to fetch Zeus-Runtime.rss manifest")?;
@@ -227,18 +259,30 @@ fn detect_existing_structure(root_dir: &Path) -> MyResult<Option<FileStructure>>
 
 fn test_structure(name: &str) -> Option<FileStructure> {
     if is_version(name) {
-        return Some(FileStructure::NESTED_VERSION_FIRST);
+        return Some(FileStructure {
+            nested: true,
+            platform_first: false,
+        });
     }
     if is_platform(name) {
-        return Some(FileStructure::NESTED_PLATFORM_FIRST);
+        return Some(FileStructure {
+            nested: true,
+            platform_first: true,
+        });
     }
 
     let (a, b) = name.split_once('_')?;
     if is_version(a) && is_platform(b) {
-        return Some(FileStructure::FLAT_VERSION_FIRST);
+        return Some(FileStructure {
+            nested: false,
+            platform_first: false,
+        });
     }
     if is_platform(a) && is_version(b) {
-        return Some(FileStructure::FLAT_PLATFORM_FIRST);
+        return Some(FileStructure {
+            nested: false,
+            platform_first: false,
+        });
     }
 
     None
