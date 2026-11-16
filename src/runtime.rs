@@ -5,7 +5,7 @@ mod platform;
 pub mod rss;
 mod url;
 
-use self::fs::FileStructure;
+use self::fs::DirStructure;
 use self::lost::LOST_RUNTIMES;
 use self::password::generate_password;
 pub use self::platform::Platform;
@@ -14,6 +14,7 @@ use self::url::DownloadUrl;
 use crate::DownloadRuntimeArgs;
 use crate::error::*;
 use crate::extract::invoke_7zip;
+use crate::extract::probe_7zip;
 use crate::net::download;
 use crate::net::fetch_text;
 use crate::net::init_client;
@@ -53,6 +54,7 @@ pub async fn download_runtimes(mut args: DownloadRuntimeArgs) -> MyResult<()> {
     }
     validate_versions(&args.versions);
     init_client();
+    probe_7zip()?;
 
     let rss: Rss = fetch_manifest().await?;
 
@@ -218,7 +220,7 @@ fn validate_versions(versions: &[Version]) {
 }
 
 /// over-engineered ux stuff or something
-fn yap_existing_structure(root_dir: &Path, provided_struc: FileStructure) -> MyResult<()> {
+fn yap_existing_structure(root_dir: &Path, provided_struc: DirStructure) -> MyResult<()> {
     match detect_existing_structure(root_dir) {
         Ok(Some(detected_struc)) if detected_struc != provided_struc => {
             // could be a warning ig
@@ -232,7 +234,7 @@ fn yap_existing_structure(root_dir: &Path, provided_struc: FileStructure) -> MyR
     Ok(())
 }
 
-fn detect_existing_structure(root_dir: &Path) -> MyResult<Option<FileStructure>> {
+pub fn detect_existing_structure(root_dir: &Path) -> MyResult<Option<DirStructure>> {
     for entry in std::fs::read_dir(root_dir).ctx("Failed to read directory")? {
         let entry = entry.ctx("Entry of read_dir is broken")?;
 
@@ -257,15 +259,15 @@ fn detect_existing_structure(root_dir: &Path) -> MyResult<Option<FileStructure>>
     Ok(None)
 }
 
-fn test_structure(name: &str) -> Option<FileStructure> {
+fn test_structure(name: &str) -> Option<DirStructure> {
     if is_version(name) {
-        return Some(FileStructure {
+        return Some(DirStructure {
             nested: true,
             platform_first: false,
         });
     }
     if is_platform(name) {
-        return Some(FileStructure {
+        return Some(DirStructure {
             nested: true,
             platform_first: true,
         });
@@ -273,13 +275,13 @@ fn test_structure(name: &str) -> Option<FileStructure> {
 
     let (a, b) = name.split_once('_')?;
     if is_version(a) && is_platform(b) {
-        return Some(FileStructure {
+        return Some(DirStructure {
             nested: false,
             platform_first: false,
         });
     }
     if is_platform(a) && is_version(b) {
-        return Some(FileStructure {
+        return Some(DirStructure {
             nested: false,
             platform_first: false,
         });

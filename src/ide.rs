@@ -29,8 +29,8 @@ struct DownloadTarget {
 }
 
 pub async fn download_ides(mut args: DownloadIdeArgs) -> MyResult<()> {
-    if args.evolution >= IdeEvolution::Extract && !probe_7zip() {
-        bail!("You need to install 7-Zip (command 7z not found)");
+    if args.evolution >= IdeEvolution::Extract {
+        probe_7zip()?;
     }
 
     init_client();
@@ -196,7 +196,6 @@ fn report_bad_versions(bad_versions: &[Version], wgat: &'static str, level: Leve
 
 /// Some versions weren't recorded by archive.org :(
 /// If you have access to these versions, let me know!
-#[allow(clippy::match_like_matches_macro, reason = "matches! is ugly")]
 const fn known_missing_version(ver: Version) -> bool {
     match ver {
         Version(1, _, ..690, _) => true,

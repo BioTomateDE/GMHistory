@@ -40,7 +40,8 @@ fn logger_fmt(buf: &mut env_logger::fmt::Formatter, record: &log::Record) -> std
 }
 
 pub fn init_logger() {
-    let env = env_logger::Env::default().default_filter_or("info");
+    let level = if cfg!(debug_assertions) { "debug" } else { "info" };
+    let env = env_logger::Env::default().default_filter_or(level);
     let logger = env_logger::Builder::from_env(env).format(logger_fmt).build();
     let max: LevelFilter = logger.filter();
     log::set_boxed_logger(Box::new(BarLogger(logger))).expect("Logger already set");

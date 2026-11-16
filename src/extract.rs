@@ -4,13 +4,19 @@ use std::ffi::OsString;
 use std::path::Path;
 use std::process::Stdio;
 
-pub fn probe_7zip() -> bool {
-    std::process::Command::new("7z")
+// TODO: collect 7zip error immediately and exit late
+pub fn probe_7zip() -> MyResult<()> {
+    if std::process::Command::new("7z")
         .arg("--help")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .is_ok()
+    {
+        Ok(())
+    } else {
+        bail!("You need to install 7-Zip (command 7z not found)");
+    }
 }
 
 pub async fn invoke_7zip(archive_file: &Path, destination_dir: &Path, password: Option<&str>) -> MyResult<()> {

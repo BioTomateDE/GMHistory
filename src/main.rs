@@ -5,6 +5,7 @@ mod ide;
 mod logger;
 mod net;
 mod progressbar;
+mod runner;
 mod runtime;
 mod tempslop;
 mod util;
@@ -13,8 +14,9 @@ mod version;
 use crate::error::MyResult;
 use crate::ide::download_ides;
 use crate::logger::init_logger;
+use crate::runner::collect_runners;
 use crate::runtime::download_runtimes;
-use crate::runtime::fs::FileStructure;
+use crate::runtime::fs::DirStructure;
 use crate::tempslop::set_ctrlc_handler;
 use crate::version::Version;
 use clap::Parser;
@@ -32,6 +34,7 @@ struct Args {
 enum Command {
     DownloadIdes(DownloadIdeArgs),
     DownloadRuntimes(DownloadRuntimeArgs),
+    CollectRunners(CollectRunnerArgs),
 }
 
 /// Download GameMaker IDE installers and potentially extract them.
@@ -67,7 +70,7 @@ enum IdeEvolution {
     Upgrade,
 }
 
-/// Downloads GameMaker runtimes (GMS2+).
+/// Download GameMaker runtimes (GMS2+).
 #[derive(Debug, Clone, Parser)]
 struct DownloadRuntimeArgs {
     /// The directory where runtimes will be collected.
@@ -89,7 +92,19 @@ struct DownloadRuntimeArgs {
     list_platforms: bool,
 
     #[command(flatten)]
-    file_structure: FileStructure,
+    file_structure: DirStructure,
+}
+
+/// Find runners from IDE and runtime dirs and collect them
+#[derive(Debug, Clone, Parser)]
+struct CollectRunnerArgs {
+    /// The directory you downloaded the runtimes to.
+    #[arg(long, short, default_value = "gamemaker-runtimes")]
+    runtimes_dir: PathBuf,
+
+    /// The directory where runners will be collected.
+    #[arg(long, short, default_value = "gamemaker-runners")]
+    output_dir: PathBuf,
 }
 
 #[tokio::main]
@@ -100,6 +115,7 @@ async fn main() {
     let result: MyResult<()> = match args.command {
         Command::DownloadIdes(args) => download_ides(args).await,
         Command::DownloadRuntimes(args) => download_runtimes(args).await,
+        Command::CollectRunners(args) => collect_runners(args).await,
     };
     crate::progressbar::BAR_TOTAL.finish_and_clear();
     if let Err(error) = result {
