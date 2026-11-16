@@ -44,10 +44,18 @@ pub async fn download(url: impl IntoUrl, target_dir: &Path, bar: &DownloadBar) -
     let limit = get_download_limit(&url);
     let _permit = limit.acquire().await.unwrap();
 
-    let mut response: Response = send_get_request(url).await?;
+    let mut response: Response = send_get_request(url.clone()).await?;
 
-    let content_length = response.content_length().ctx("No content length specified")?;
-    bar.set_length(content_length);
+    let content_length = response.content_length();
+    if let Some(len) = content_length {
+        bar.set_length(len);
+    } else {
+        // Content-Length is not set for IDE 1.4.1772 (archive.org)
+        //
+        // This can also happen for when archive.org hit a 404 when scraping (but now sends a 200).
+        // That case should be caught by the known_missing_version filter though.
+        warn!("No content length specified for {url}; progress bar will appear stuck");
+    }
 
     let mut open_tempfile = OpenTempFile::new(target_dir)?;
 
@@ -57,7 +65,12 @@ pub async fn download(url: impl IntoUrl, target_dir: &Path, bar: &DownloadBar) -
             .file_mut()
             .write_all(&chunk)
             .ctx("Failed to write response bytes to file")?;
-        bar.inc(chunk.len() as u64);
+        if content_length.is_some() {
+            bar.inc(chunk.len() as u64);
+        }
+    }
+    if content_length.is_none() {
+        bar.set_completed();
     }
     Ok(open_tempfile)
 }

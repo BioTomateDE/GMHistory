@@ -66,7 +66,7 @@ enum IdeEvolution {
     /// Extract installer archive (only free version; kinda useless).
     Extract,
 
-    /// Extract password-protected UpgradeZip in the installer archive
+    /// For GM:S 1, extract password-protected UpgradeZip in the installer archive
     Upgrade,
 }
 
@@ -98,13 +98,17 @@ struct DownloadRuntimeArgs {
 /// Find runners from IDE and runtime dirs and collect them
 #[derive(Debug, Clone, Parser)]
 struct CollectRunnerArgs {
+    /// The directory where runners will be collected.
+    #[arg(long, short, default_value = "gamemaker-runners")]
+    output_dir: PathBuf,
+
     /// The directory you downloaded the runtimes to.
     #[arg(long, short, default_value = "gamemaker-runtimes")]
     runtimes_dir: PathBuf,
 
-    /// The directory where runners will be collected.
-    #[arg(long, short, default_value = "gamemaker-runners")]
-    output_dir: PathBuf,
+    /// The directory you downloaded the IDEs to.
+    #[arg(long, short, default_value = "gamemaker-runtimes")]
+    ides_dir: PathBuf,
 }
 
 #[tokio::main]

@@ -79,20 +79,26 @@ async fn download_ide_impl(download_target: &DownloadTarget, args: DownloadIdeAr
         return Ok(());
     }
 
-    // Unfortunately the progress bar will have to stay at
-    // 100% for a few seconds while 7-Zip is extracting.
     let archive_dir = TempDir::new(&args.output_dir)?;
     invoke_7zip(temp_download_file.path(), archive_dir.path(), None).await?;
-    drop(temp_download_file);
 
-    if args.evolution == IdeEvolution::Upgrade && version.0 == 1 {
-        let another_tempdir = TempDir::new(&args.output_dir)?;
-        let upgrade_zip = gms1_upgrade_zip_path(*version, archive_dir.path());
-        invoke_7zip(&upgrade_zip, another_tempdir.path(), Some(GMS1_PASSWORD)).await?;
-    } else {
-        archive_dir.rename(path)?;
-    }
+    let upgrade = args.evolution >= IdeEvolution::Upgrade;
+    let tempdir: TempDir = evolve(*version, temp_download_file.path(), &args.output_dir, upgrade).await?;
+    tempdir.rename(path)?;
     Ok(())
+}
+
+pub async fn evolve(version: Version, ide_installer: &Path, output_dir: &Path, upgrade: bool) -> MyResult<TempDir> {
+    // Unfortunately the progress bar will have to stay at
+    // 100% for a few seconds while 7-Zip is extracting.
+    let archive_dir = TempDir::new(output_dir)?;
+    invoke_7zip(ide_installer, archive_dir.path(), None).await?;
+
+    if upgrade && version.0 == 1 {
+        upgrade_gms1(version, archive_dir.path(), output_dir).await
+    } else {
+        Ok(archive_dir)
+    }
 }
 
 // TODO: allow version ranges
@@ -228,7 +234,7 @@ fn get_url(version: Version) -> String {
 }
 
 fn gms1_upgrade_zip_path(version: Version, temp_archive_dir: &Path) -> PathBuf {
-    let zip_name = if version.3 > 1451 {
+    let zip_name = if version.2 > 1451 {
         format!("Original-{version}.zip")
     } else {
         "upgrade.zip".to_owned()
@@ -236,4 +242,12 @@ fn gms1_upgrade_zip_path(version: Version, temp_archive_dir: &Path) -> PathBuf {
     temp_archive_dir
         .join("$LOCALAPPDATA/GameMaker-Studio/UpgradeZip/")
         .join(zip_name)
+}
+
+pub async fn upgrade_gms1(version: Version, ide_dir: &Path, output_dir: &Path) -> MyResult<TempDir> {
+    // 1.4.1567 will fail here with "invalid password". No idea what the correct password is.
+    let upgrade_zip = gms1_upgrade_zip_path(version, ide_dir);
+    let archive_dir = TempDir::new(output_dir)?;
+    invoke_7zip(&upgrade_zip, archive_dir.path(), Some(GMS1_PASSWORD)).await?;
+    Ok(archive_dir)
 }

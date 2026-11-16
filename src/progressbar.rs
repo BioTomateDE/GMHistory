@@ -76,6 +76,11 @@ impl DownloadBar {
         // Cumulative difference, so integer rounding never drifts; a finished file adds exactly SCALE.
         BAR_TOTAL.inc(share(self.0.position(), len) - before);
     }
+
+    pub fn set_completed(&self) {
+        self.0.set_length(1);
+        self.0.set_position(1);
+    }
 }
 
 impl Drop for DownloadBar {

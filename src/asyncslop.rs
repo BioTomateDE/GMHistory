@@ -3,7 +3,7 @@ use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 /// Limit for sending requests / downloading files from `archive.org`.
-pub static ARCHIVEORG_LIMIT: Semaphore = Semaphore::const_new(1);
+pub static ARCHIVEORG_LIMIT: Semaphore = Semaphore::const_new(3);
 
 /// Limit for sending requests / downloading files from all other sites.
 pub static DOWNLOAD_LIMIT: Semaphore = Semaphore::const_new(4);
