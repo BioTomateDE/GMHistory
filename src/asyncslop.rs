@@ -1,4 +1,6 @@
+use crate::error::*;
 use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 /// Limit for sending requests / downloading files from `archive.org`.
 pub static ARCHIVEORG_LIMIT: Semaphore = Semaphore::const_new(1);
@@ -20,4 +22,25 @@ pub fn get_download_limit(url: &reqwest::Url) -> &'static Semaphore {
     } else {
         &DOWNLOAD_LIMIT
     }
+}
+
+pub async fn join_tasks(mut tasks: JoinSet<MyResult<()>>) -> MyResult<()> {
+    let total = tasks.len();
+    let mut failed: usize = 0;
+    while let Some(joined) = tasks.join_next().await {
+        match joined {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                log::log!(log::Level::Error, "{e}");
+                failed += 1;
+            }
+            Err(e) => bail!(e, "Task panicked"),
+        }
+    }
+
+    if failed > 0 {
+        bail!("{failed}/{total} tasks failed");
+    }
+    log::info!("All done!");
+    Ok(())
 }

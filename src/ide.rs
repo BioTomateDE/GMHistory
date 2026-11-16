@@ -1,5 +1,6 @@
 use crate::DownloadIdeArgs;
 use crate::IdeEvolution;
+use crate::asyncslop::join_tasks;
 use crate::error::*;
 use crate::extract::invoke_7zip;
 use crate::extract::probe_7zip;
@@ -49,17 +50,7 @@ pub async fn download_ides(mut args: DownloadIdeArgs) -> MyResult<()> {
         let args = args.clone();
         let _: AbortHandle = tasks.spawn(async move { download_ide(download_target, args).await });
     }
-
-    while let Some(joined) = tasks.join_next().await {
-        match joined {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => log::log!(log::Level::Error, "{e}"),
-            Err(e) => bail!(e, "Task panicked"),
-        }
-    }
-
-    log::info!("All done!");
-    Ok(())
+    join_tasks(tasks).await
 }
 
 async fn download_ide(download_target: DownloadTarget, args: DownloadIdeArgs) -> MyResult<()> {

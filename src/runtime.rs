@@ -12,6 +12,7 @@ pub use self::platform::Platform;
 use self::rss::Rss;
 use self::url::DownloadUrl;
 use crate::DownloadRuntimeArgs;
+use crate::asyncslop::join_tasks;
 use crate::error::*;
 use crate::extract::invoke_7zip;
 use crate::extract::probe_7zip;
@@ -73,17 +74,7 @@ pub async fn download_runtimes(mut args: DownloadRuntimeArgs) -> MyResult<()> {
         let args = Arc::clone(&args);
         let _: AbortHandle = tasks.spawn(async move { download_runtime(download_target, args).await });
     }
-
-    while let Some(joined) = tasks.join_next().await {
-        match joined {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => log::log!(log::Level::Error, "{e}"),
-            Err(e) => bail!(e, "Task panicked"),
-        }
-    }
-
-    log::info!("All done!");
-    Ok(())
+    join_tasks(tasks).await
 }
 
 async fn download_runtime(download_target: DownloadTarget, args: Arc<DownloadRuntimeArgs>) -> MyResult<()> {
