@@ -1,6 +1,3 @@
-mod ide;
-mod runtime;
-
 use crate::error::*;
 use core::fmt;
 use serde::Deserialize;
@@ -16,11 +13,6 @@ use std::num::IntErrorKind;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
 #[serde(try_from = "&str")]
 pub struct Version(pub u16, pub u16, pub u16, pub u16);
-
-impl Version {
-    pub const ALL_IDES: &[Self] = self::ide::ALL;
-    pub const ALL_RUNTIMES: &[Self] = self::runtime::ALL;
-}
 
 impl TryFrom<&str> for Version {
     type Error = Error;

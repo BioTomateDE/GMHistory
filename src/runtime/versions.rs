@@ -1,7 +1,7 @@
-//! Taken from `Zeus-Runtime.rss`
 use super::Version;
 
-pub const ALL: &[Version] = &[
+/// (Probably) All GameMaker runtimes versions, taken from `Zeus-Runtime.rss`.
+pub const ALL_VERSIONS: &[Version] = &[
     Version(2, 1, 4, 200),
     Version(2, 1, 4, 202),
     Version(2, 1, 4, 203),

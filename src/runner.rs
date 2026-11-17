@@ -160,6 +160,27 @@ fn ide_version_from_filename(path: &Path, filename: &str) -> MyResult<IdeTarget>
     }
 }
 
+// TODO: garbage and duplicated code
+pub fn detect_ide_evolution(output_dir: &Path) -> MyResult<Option<IdeEvolution>> {
+    let ctx = || format!("Failed to read IDEs directory `{}`", output_dir.display());
+
+    for entry in std::fs::read_dir(output_dir).ctx(ctx)? {
+        let entry = entry.ctx(ctx)?;
+        let path = entry.path();
+        let filename = path.file_name().unwrap();
+        let filename = filename
+            .to_str()
+            .ctx(|| format!("Non UTF-8 filename `{}`", filename.display()))?;
+        if filename.starts_with('.') {
+            continue;
+        }
+        let stuff = ide_version_from_filename(&path, filename)
+            .ctx(|| format!("Failed to detect version from IDE path `{}`", path.display()))?;
+        return Ok(Some(stuff.evolution));
+    }
+    Ok(None)
+}
+
 fn strip_any_prefix<'a>(string: &'a str, prefixes: &[&str]) -> Option<&'a str> {
     for prefix in prefixes {
         if let Some(rest) = string.strip_prefix(prefix) {

@@ -39,14 +39,20 @@ pub async fn fetch_text(url: impl IntoUrl) -> MyResult<String> {
     resp.text().await.ctx("Failed to get response text")
 }
 
-pub async fn download(url: impl IntoUrl, target_dir: &Path, bar: &DownloadBar) -> MyResult<OpenTempFile> {
+pub async fn download(
+    url: impl IntoUrl,
+    target_dir: &Path,
+    bar: &DownloadBar,
+    content_length: Option<u64>,
+) -> MyResult<OpenTempFile> {
     let url: reqwest::Url = url.into_url().ctx("Bad URL")?;
     let limit = get_download_limit(&url);
     let _permit = limit.acquire().await.unwrap();
 
     let mut response: Response = send_get_request(url.clone()).await?;
 
-    let content_length = response.content_length();
+    // TODO: is this logic still needed
+    let content_length = content_length.or_else(|| response.content_length());
     if let Some(len) = content_length {
         bar.set_length(len);
     } else {

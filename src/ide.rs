@@ -1,3 +1,8 @@
+mod targets;
+mod versions;
+
+use self::targets::DOWNLOAD_TARGETS;
+use self::versions::ALL_VERSIONS;
 use crate::DownloadIdeArgs;
 use crate::IdeEvolution;
 use crate::asyncslop::join_tasks;
@@ -7,6 +12,7 @@ use crate::extract::probe_7zip;
 use crate::net::download;
 use crate::net::init_client;
 use crate::progressbar::DownloadBar;
+use crate::runner::detect_ide_evolution;
 use crate::tempslop::OpenTempFile;
 use crate::tempslop::TempDir;
 use crate::util::mkdir;
@@ -22,14 +28,28 @@ use tokio::task::JoinSet;
 /// Datamined from `GameMaker-Studio.exe` lol
 pub const GMS1_PASSWORD: &str = "12#_p@o3w$ir_ADD-_$#";
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct DownloadTarget {
     version: Version,
-    url: String,
-    path: PathBuf,
+    content_length: u64,
+    url: &'static str,
 }
 
-pub async fn download_ides(mut args: DownloadIdeArgs) -> MyResult<()> {
+impl DownloadTarget {
+    fn filename(self, evolution: IdeEvolution) -> String {
+        match evolution {
+            IdeEvolution::OriginalInstallers => self.url.rsplit_once('/').unwrap().1.to_owned(),
+            IdeEvolution::RenamedInstallers => format!("{}.exe", self.version),
+            IdeEvolution::Extract | IdeEvolution::Upgrade => self.version.to_string(), // directory
+        }
+    }
+
+    fn is_archive(self) -> bool {
+        self.url.contains("archive.org") // good enough
+    }
+}
+
+pub async fn download_ides(args: DownloadIdeArgs) -> MyResult<()> {
     if args.evolution >= IdeEvolution::Extract {
         probe_7zip()?;
     }
@@ -37,14 +57,24 @@ pub async fn download_ides(mut args: DownloadIdeArgs) -> MyResult<()> {
     init_client();
     mkdir(&args.output_dir).ctx("Could not create output directory")?;
 
-    let downloads: Vec<DownloadTarget> = get_download_targets(&mut args); // clears args.versions
+    let mut downloads: Vec<DownloadTarget> = get_download_targets(&args);
+    filter_already_downloaded(&mut downloads, &args.output_dir, args.evolution);
     let count = downloads.len();
     if count == 0 {
         return Ok(());
     }
     log::info!("Downloading {count} IDEs");
-    crate::progressbar::set_download_count(count);
 
+    if let Some(evo) = detect_ide_evolution(&args.output_dir)?
+        && evo != args.evolution
+    {
+        bail!(
+            "Output directory already has {evo:?} downloads; refusing to download {:?} in the same directory",
+            args.evolution,
+        );
+    }
+
+    crate::progressbar::set_download_count(count);
     let mut tasks = JoinSet::new();
     for download_target in downloads {
         let args = args.clone();
@@ -54,28 +84,30 @@ pub async fn download_ides(mut args: DownloadIdeArgs) -> MyResult<()> {
 }
 
 async fn download_ide(download_target: DownloadTarget, args: DownloadIdeArgs) -> MyResult<()> {
-    let DownloadTarget { version, url, path: _ } = &download_target;
-    let name = if url.contains("archive.org") {
-        // good enough for me
+    let DownloadTarget { version, url, .. } = &download_target;
+    let name = if download_target.is_archive() {
         format!("IDE {version} (archive.org)")
     } else {
         format!("IDE {version}")
     };
     let bar = DownloadBar::new(name);
-    download_ide_impl(&download_target, args, &bar)
+    download_ide_impl(download_target, args, &bar)
         .await
         .ctx(|| format!("Failed to download IDE {version} from {url}"))?;
     Ok(())
 }
 
-async fn download_ide_impl(download_target: &DownloadTarget, args: DownloadIdeArgs, bar: &DownloadBar) -> MyResult<()> {
-    let DownloadTarget { version, url, path } = &download_target;
-    let temp_download_file: OpenTempFile = download(url, &args.output_dir, bar)
-        .await
-        .ctx(|| format!("Failed to download IDE {version} from {url}"))?;
+async fn download_ide_impl(download_target: DownloadTarget, args: DownloadIdeArgs, bar: &DownloadBar) -> MyResult<()> {
+    let DownloadTarget {
+        version,
+        url,
+        content_length,
+    } = download_target;
+    let temp_download_file: OpenTempFile = download(url, &args.output_dir, bar, Some(content_length)).await?;
 
+    let path = args.output_dir.join(download_target.filename(args.evolution));
     if args.evolution < IdeEvolution::Extract {
-        temp_download_file.rename(path)?;
+        temp_download_file.rename(&path)?;
         return Ok(());
     }
 
@@ -83,11 +115,12 @@ async fn download_ide_impl(download_target: &DownloadTarget, args: DownloadIdeAr
     invoke_7zip(temp_download_file.path(), archive_dir.path(), None).await?;
 
     let upgrade = args.evolution >= IdeEvolution::Upgrade;
-    let tempdir: TempDir = evolve(*version, temp_download_file.path(), &args.output_dir, upgrade).await?;
-    tempdir.rename(path)?;
+    let tempdir: TempDir = evolve(version, temp_download_file.path(), &args.output_dir, upgrade).await?;
+    tempdir.rename(&path)?;
     Ok(())
 }
 
+// TODO: get rid of this function
 pub async fn evolve(version: Version, ide_installer: &Path, output_dir: &Path, upgrade: bool) -> MyResult<TempDir> {
     // Unfortunately the progress bar will have to stay at
     // 100% for a few seconds while 7-Zip is extracting.
@@ -102,28 +135,12 @@ pub async fn evolve(version: Version, ide_installer: &Path, output_dir: &Path, u
 }
 
 // TODO: allow version ranges
-// TODO: holy fuck this is so bad
-fn get_download_targets(args: &mut DownloadIdeArgs) -> Vec<DownloadTarget> {
+fn get_download_targets(args: &DownloadIdeArgs) -> Vec<DownloadTarget> {
     if args.versions.is_empty() {
-        let mut existing_versions = Vec::new();
-        let mut versions: Vec<DownloadTarget> = Vec::new();
-        for &version in Version::ALL_IDES {
-            if known_missing_version(version) {
-                continue;
-            }
-            let url = get_url(version);
-            let path = version_get_path(version, &url, args);
-            if path.exists() {
-                existing_versions.push(version);
-            } else {
-                versions.push(DownloadTarget { version, url, path });
-            }
-        }
-        report_bad_versions(&existing_versions, "already downloaded", Level::Info);
-        return versions;
+        return DOWNLOAD_TARGETS.to_vec();
     }
 
-    let mut provided_versions = core::mem::take(&mut args.versions);
+    let mut provided_versions = args.versions.clone();
     let total_count = provided_versions.len();
     provided_versions.dedup();
     let duplicate_count = total_count - provided_versions.len();
@@ -134,44 +151,40 @@ fn get_download_targets(args: &mut DownloadIdeArgs) -> Vec<DownloadTarget> {
     let mut versions: Vec<DownloadTarget> = Vec::new();
     let mut invalid_versions = Vec::new();
     let mut missing_versions = Vec::new();
-    let mut existing_versions = Vec::new();
 
     for version in provided_versions {
-        if !Version::ALL_IDES.contains(&version) {
-            invalid_versions.push(version);
+        if let Some(&download_target) = DOWNLOAD_TARGETS.iter().find(|target| target.version == version) {
+            versions.push(download_target);
             continue;
         }
-        if known_missing_version(version) {
+        if ALL_VERSIONS.contains(&version) {
             missing_versions.push(version);
-            continue;
-        }
-
-        let url: String = get_url(version);
-        let path = version_get_path(version, &url, args);
-        if path.exists() {
-            existing_versions.push(version);
         } else {
-            versions.push(DownloadTarget { version, url, path });
+            invalid_versions.push(version);
         }
+        invalid_versions.push(version);
     }
 
-    report_bad_versions(&invalid_versions, "invalid", Level::Warn);
-    report_bad_versions(&missing_versions, "missing", Level::Warn);
-    report_bad_versions(&existing_versions, "already downloaded", Level::Info);
-
+    report_versions(&invalid_versions, "invalid", Level::Warn);
+    report_versions(&missing_versions, "missing", Level::Warn);
     versions
 }
 
-fn version_get_path(version: Version, url: &str, args: &DownloadIdeArgs) -> PathBuf {
-    let name: String = match args.evolution {
-        IdeEvolution::OriginalInstallers => url.rsplit_once('/').unwrap().1.to_owned(),
-        IdeEvolution::RenamedInstallers => format!("{version}.exe"),
-        IdeEvolution::Extract | IdeEvolution::Upgrade => version.to_string(), // directory
-    };
-    args.output_dir.join(name)
+fn filter_already_downloaded(targets: &mut Vec<DownloadTarget>, output_dir: &Path, evolution: IdeEvolution) {
+    let mut existing_versions = Vec::new();
+    targets.retain(|target| {
+        let path: PathBuf = output_dir.join(target.filename(evolution));
+        if path.exists() {
+            existing_versions.push(target.version);
+            false
+        } else {
+            true
+        }
+    });
+    report_versions(&existing_versions, "already downloaded", Level::Info);
 }
 
-fn report_bad_versions(bad_versions: &[Version], wgat: &'static str, level: Level) {
+fn report_versions(bad_versions: &[Version], wgat: &'static str, level: Level) {
     use core::fmt::Write;
     const MAX: usize = 12;
     let count = bad_versions.len();
@@ -189,48 +202,6 @@ fn report_bad_versions(bad_versions: &[Version], wgat: &'static str, level: Leve
         _ = write!(string, " and {} more", count - MAX);
     }
     log::log!(level, "{string}");
-}
-
-/// Some versions weren't recorded by archive.org :(
-/// If you have access to these versions, let me know!
-const fn known_missing_version(ver: Version) -> bool {
-    match ver {
-        Version(1, _, ..690, _) => true,
-        Version(1, 2, 1262, _) | Version(1, 3, 1312, _) | Version(2, 0, 3, 56) => true,
-        _ => false,
-    }
-}
-
-/// Some installer downloads were captured before they were actually released.
-/// This causes the earliest snapshot to be a 404 page instead of a download.
-#[expect(clippy::unreadable_literal)]
-const fn override_timestamp(ver: Version) -> Option<u64> {
-    Some(match ver {
-        Version(1, 1, 1013, _) => 20140721060018,
-        Version(1, 1, 1044 | 1058, _) => 20160325114921,
-        Version(1, 1, 1076, _) => 20140721043634,
-        _ => return None,
-    })
-}
-
-fn get_url(version: Version) -> String {
-    if version.0 == 1 {
-        // A zero in the archive.org URL expands to the oldest recorded snapshot.
-        let timestamp: u64 = override_timestamp(version).unwrap_or(0);
-        format!(
-            "https://web.archive.org/web/{timestamp}/http://store.yoyogames.com/downloads/gm-studio/GMStudio-Installer-{version}.exe"
-        )
-    } else if version.0 == 2 && version.3 < 295 {
-        format!("https://web.archive.org/web/0/http://gms.yoyogames.com/GameMakerStudio-Installer-{version}.exe")
-    } else if version.0 == 2 || (version.0 == 2022 && version.1 < 3) {
-        // The earliest post-Studio releases (2022.1.0.609, 2022.1.1.610, 2022.2.0.614, 2022.2.1.618) still have Studio in their download URL.
-        format!("https://gms.yoyogames.com/GameMakerStudio-Installer-{version}.exe")
-        // macOS: "https://gms.yoyogames.com/GameMakerStudio2-{version}.pkg"
-    } else {
-        format!("https://gms.yoyogames.com/GameMaker-Installer-{version}.exe")
-        // macOS: "https://gms.yoyogames.com/GameMaker-{version}.pkg"
-        // HTML overview: <https://gms.yoyogames.com/ReleaseNotes.html>
-    }
 }
 
 fn gms1_upgrade_zip_path(version: Version, temp_archive_dir: &Path) -> PathBuf {

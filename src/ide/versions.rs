@@ -1,6 +1,9 @@
 use super::Version;
 
-pub const ALL: &[Version] = &[
+/// All GameMaker IDE versions, collected from official changeloge pages.
+///
+/// Some of these are not downloadable (anymore).
+pub const ALL_VERSIONS: &[Version] = &[
     Version(1, 0, 23, 0),
     Version(1, 0, 31, 0),
     Version(1, 0, 52, 0),

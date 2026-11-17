@@ -4,6 +4,7 @@ mod password;
 mod platform;
 pub mod rss;
 mod url;
+mod versions;
 
 use self::fs::DirStructure;
 use self::lost::LOST_RUNTIMES;
@@ -11,6 +12,7 @@ use self::password::generate_password;
 pub use self::platform::Platform;
 use self::rss::Rss;
 use self::url::DownloadUrl;
+use self::versions::ALL_VERSIONS;
 use crate::DownloadRuntimeArgs;
 use crate::asyncslop::join_tasks;
 use crate::error::*;
@@ -104,7 +106,7 @@ async fn download_runtime_impl(
     }
 
     let url = download_url.to_url();
-    let open_temp_file: OpenTempFile = download(&url, &args.output_dir, bar)
+    let open_temp_file: OpenTempFile = download(&url, &args.output_dir, bar, None)
         .await
         .ctx(|| format!("Failed to download {version} for {platform} from {url}"))?;
 
@@ -194,7 +196,7 @@ fn validate_versions(versions: &[Version]) {
 
     let mut invalids: Vec<Version> = Vec::new();
     for ver in versions {
-        if !Version::ALL_RUNTIMES.contains(ver) {
+        if ALL_VERSIONS.contains(ver) {
             invalids.push(*ver);
         }
     }
