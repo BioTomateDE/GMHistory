@@ -59,14 +59,14 @@ pub async fn download_runtimes(mut args: DownloadRuntimeArgs) -> MyResult<()> {
 
     let rss: Rss = fetch_manifest().await?;
 
-    let download_targets: Box<[DownloadTarget]> = get_download_targets(rss, &args.versions, &args.platforms)?;
+    let download_targets: Vec<DownloadTarget> = get_download_targets(rss, &args)?;
     args.versions.clear();
     let count = download_targets.len();
     crate::progressbar::set_download_count(count);
     log::info!("Got {count} download targets");
 
     mkdir(&args.output_dir).ctx("Failed to create root output directory")?;
-    yap_existing_structure(&args.output_dir, args.file_structure)?;
+    yap_existing_structure(&args.output_dir, args.dir_structure)?;
 
     let mut tasks = JoinSet::new();
     let args = Arc::new(args);
@@ -98,7 +98,7 @@ async fn download_runtime_impl(
         download_url,
     } = download_target;
 
-    let output_dir: PathBuf = args.file_structure.resolve(&args.output_dir, version, platform);
+    let output_dir: PathBuf = args.dir_structure.resolve(&args.output_dir, version, platform);
     if output_dir.exists() {
         return Ok(());
     }
@@ -116,19 +116,22 @@ async fn download_runtime_impl(
         .ctx(|| format!("Failed to extract {version} ({platform}) with password {password:?}"))?;
     drop(open_temp_file);
 
-    args.file_structure
+    args.dir_structure
         .ensure_parent_dir(&args.output_dir, version, platform)?;
     archive_dir.rename(&output_dir)?;
     Ok(())
 }
 
-fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) -> MyResult<Box<[DownloadTarget]>> {
+fn get_download_targets(rss: Rss, args: &DownloadRuntimeArgs) -> MyResult<Vec<DownloadTarget>> {
+    let versions = &args.versions;
+    let platforms = &args.platforms;
+    let all_versions = versions.is_empty();
+    let all_platforms = platforms.is_empty();
     let mut targets: Vec<DownloadTarget> = Vec::new();
 
     for item in rss.channel.items {
         let version = item.enclosure.version;
-        // no versions specified -> download all
-        if !versions.is_empty() && !versions.contains(&version) {
+        if !all_versions && !versions.contains(&version) {
             continue;
         }
 
@@ -137,8 +140,7 @@ fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) 
             if platform == Platform::MacMono {
                 continue;
             }
-            // no platforms specified -> download all
-            if !platforms.is_empty() && !platforms.contains(&platform) {
+            if !all_platforms && !platforms.contains(&platform) {
                 continue;
             }
 
@@ -146,6 +148,10 @@ fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) 
                 .ctx(|| format!("Failed to parse download URL for {version} {platform}"))?;
 
             if LOST_RUNTIMES.contains(&download_url.uuid) {
+                continue;
+            }
+
+            if args.dir_structure.resolve(&args.output_dir, version, platform).exists() {
                 continue;
             }
 
@@ -157,7 +163,11 @@ fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) 
             targets.push(target);
         }
 
-        if !platforms.is_empty() && !platforms.contains(&Platform::Root) {
+        if !all_platforms && !platforms.contains(&Platform::Root) {
+            continue;
+        }
+        let path = args.dir_structure.resolve(&args.output_dir, version, Platform::Root);
+        if path.exists() {
             continue;
         }
         let target = DownloadTarget {
@@ -168,7 +178,7 @@ fn get_download_targets(rss: Rss, versions: &[Version], platforms: &[Platform]) 
         targets.push(target);
     }
 
-    Ok(targets.into_boxed_slice())
+    Ok(targets)
 }
 
 async fn fetch_manifest() -> MyResult<Rss> {

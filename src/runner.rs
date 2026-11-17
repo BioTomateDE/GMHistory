@@ -10,6 +10,7 @@ use crate::runtime::fs::DirStructure;
 use crate::runtime::fs::WalkTheDawg;
 use crate::tempslop::TempDir;
 use crate::util::mkdir;
+use crate::util::stat;
 use crate::version::Version;
 use std::fs::Metadata;
 use std::path::Path;
@@ -63,7 +64,7 @@ async fn collect_ide_runners(args: &CollectRunnerArgs) -> MyResult<()> {
             continue;
         }
 
-        let stuff = ide_version_from_filename(&path, filename, entry.metadata())
+        let stuff = ide_version_from_filename(&path, filename)
             .ctx(|| format!("Failed to detect version from IDE path `{}`", path.display()))?;
         targets.push(stuff);
     }
@@ -111,7 +112,7 @@ async fn copy_runner(ide_dir: &Path, output_dir: &Path, version: Version) -> MyR
     Ok(())
 }
 
-fn ide_version_from_filename(path: &Path, filename: &str, metadata: std::io::Result<Metadata>) -> MyResult<IdeTarget> {
+fn ide_version_from_filename(path: &Path, filename: &str) -> MyResult<IdeTarget> {
     /// Original installer filenames start with one of these prefixes, depending on the GameMaker version.
     const PREFIXES: &[&str] = &[
         "GMStudio-Installer-",
@@ -119,7 +120,7 @@ fn ide_version_from_filename(path: &Path, filename: &str, metadata: std::io::Res
         "GameMaker-Installer-",
     ];
 
-    let metadata: Metadata = metadata.ctx(|| format!("Failed to fetch metadata for `{}`", path.display()))?;
+    let metadata: Metadata = stat(path, "IDE file/directory")?;
     if metadata.is_file() {
         let Some(stem) = filename.strip_suffix(".exe") else {
             bail!("Filename does not end with `.exe`: {filename:?}");

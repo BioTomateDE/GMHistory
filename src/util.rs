@@ -1,7 +1,13 @@
 use crate::error::*;
 use std::fs::FileType;
+use std::fs::Metadata;
 use std::io::ErrorKind;
 use std::path::Path;
+
+pub fn stat(path: &Path, description: &'static str) -> MyResult<Metadata> {
+    path.metadata()
+        .ctx(|| format!("Failed to fetch metadata of {description} `{}`", path.display()))
+}
 
 fn ignore_kind(result: std::io::Result<()>, kind: ErrorKind) -> MyResult<()> {
     match result {
@@ -32,7 +38,7 @@ pub fn mkdir(path: &Path) -> MyResult<()> {
     ignore_exists(std::fs::create_dir(path))
 }
 
-fn file_kind(file_type: FileType) -> &'static str {
+pub fn file_kind(file_type: FileType) -> &'static str {
     if file_type.is_file() {
         return "file";
     }

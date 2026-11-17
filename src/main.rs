@@ -92,7 +92,7 @@ struct DownloadRuntimeArgs {
     list_platforms: bool,
 
     #[command(flatten)]
-    file_structure: DirStructure,
+    dir_structure: DirStructure,
 }
 
 /// Find runners from IDE and runtime dirs and collect them
@@ -103,7 +103,7 @@ struct CollectRunnerArgs {
     output_dir: PathBuf,
 
     /// The directory you downloaded the runtimes to.
-    #[arg(long, short, default_value = "gamemaker-runtimes")]
+    #[arg(long, default_value = "gamemaker-runtimes")]
     runtimes_dir: PathBuf,
 
     /// The directory you downloaded the IDEs to.

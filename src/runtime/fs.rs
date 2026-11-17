@@ -1,6 +1,7 @@
 use crate::error::*;
 use crate::runtime::Platform;
 use crate::util::mkdir;
+use crate::util::stat;
 use crate::version::Version;
 use std::fmt;
 use std::fs::Metadata;
@@ -66,11 +67,11 @@ pub struct WalkTheDawg {
     pub path: PathBuf,
 }
 
-fn skip_entry(path: &Path, metadata: std::io::Result<Metadata>) -> MyResult<bool> {
+fn skip_entry(path: &Path) -> MyResult<bool> {
     if path.file_name().unwrap().as_encoded_bytes().starts_with(b".") {
         return Ok(true);
     }
-    let meta: Metadata = metadata.ctx(|| format!("Failed to get metadata of `{}`", path.display()))?;
+    let meta: Metadata = stat(path, "entry")?;
     Ok(!meta.is_dir())
 }
 
@@ -79,7 +80,7 @@ fn walk_the_dawg_killmyself(struc: DirStructure, root_dir: &Path) -> MyResult<Ve
     for entry in std::fs::read_dir(root_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if skip_entry(&path, entry.metadata())? {
+        if skip_entry(&path)? {
             continue;
         }
         let name = path.file_name().unwrap().to_str();
@@ -127,7 +128,7 @@ fn get_nested_thingy(
     for entry in std::fs::read_dir(dir_path)? {
         let entry = entry?;
         let path = entry.path();
-        if skip_entry(&path, entry.metadata())? {
+        if skip_entry(&path)? {
             continue;
         }
         let name = dir_path.file_name().unwrap().to_str();

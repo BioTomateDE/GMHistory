@@ -8,6 +8,8 @@ use std::sync::LazyLock;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
+// TODO: eta that doesnt suck ass (needs to differentiate between archive.org downloads and others)
+
 const STYLE: &str = "{msg:36!} {bytes_per_sec:>13} {eta_mmss} [{wide_bar}] {percent:>3}%";
 const STYLE_TOTAL: &str = "{msg:36!} {prefix:10!} {eta_precise} [{wide_bar}] {percent:>3}%";
 
