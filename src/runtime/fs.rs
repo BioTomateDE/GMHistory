@@ -1,10 +1,9 @@
 use crate::error::*;
 use crate::runtime::Platform;
+use crate::util::listdir;
 use crate::util::mkdir;
-use crate::util::stat;
 use crate::version::Version;
 use std::fmt;
-use std::fs::Metadata;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -46,9 +45,8 @@ impl DirStructure {
         mkdir(&dir).ctx("Failed to create subdirectory")
     }
 
-    pub fn walk(self, root_dir: &Path) -> MyResult<Vec<WalkTheDawg>> {
-        walk_the_dawg_killmyself(self, root_dir)
-            .ctx(|| format!("Failed to walk runtimes directory `{}`", root_dir.display()))
+    pub fn walk(self, root_dir: &Path) -> MyResult<Vec<RuntimeDir>> {
+        walk(self, root_dir).ctx(|| format!("Failed to walk runtimes directory `{}`", root_dir.display()))
     }
 }
 
@@ -61,94 +59,77 @@ impl fmt::Display for DirStructure {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WalkTheDawg {
+pub struct RuntimeDir {
     pub version: Version,
     pub platform: Platform,
     pub path: PathBuf,
 }
 
-fn skip_entry(path: &Path) -> MyResult<bool> {
-    if path.file_name().unwrap().as_encoded_bytes().starts_with(b".") {
-        return Ok(true);
-    }
-    let meta: Metadata = stat(path, "entry")?;
-    Ok(!meta.is_dir())
-}
-
-fn walk_the_dawg_killmyself(struc: DirStructure, root_dir: &Path) -> MyResult<Vec<WalkTheDawg>> {
+fn walk(struc: DirStructure, root_dir: &Path) -> MyResult<Vec<RuntimeDir>> {
     let mut entries = Vec::new();
-    for entry in std::fs::read_dir(root_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if skip_entry(&path)? {
-            continue;
-        }
-        let name = path.file_name().unwrap().to_str();
-        let name: &str = name.ctx("Invalid UTF-8 in filename")?;
-        if !struc.nested {
-            let (a, b) = name.split_once('_').ctx("No underscore in flat filename")?;
-            let dawg = if struc.platform_first {
-                WalkTheDawg {
-                    version: parse_version(b)?,
-                    platform: parse_platform(a)?,
-                    path,
-                }
+    for entry in listdir(root_dir)? {
+        let filename = entry.filename();
+        if struc.nested {
+            let mut platform = None;
+            let mut version = None;
+            if struc.platform_first {
+                let plat = Platform::from_str(filename).ctx("Failed to parse filename as platform")?;
+                platform = Some(plat);
             } else {
-                WalkTheDawg {
-                    version: parse_version(a)?,
-                    platform: parse_platform(b)?,
-                    path,
-                }
-            };
-            entries.push(dawg);
+                let ver = Version::try_from(filename).ctx("Failed to parse filename as version")?;
+                version = Some(ver);
+            }
+            get_nested_thingy(&entry.path, &mut entries, version, platform)
+                .ctx(|| format!("Failed to walk runtimes subdirectory {entry}"))?;
             continue;
         }
-        // nested slop
-        let mut platform = None;
-        let mut version = None;
-        if struc.platform_first {
-            let plat = Platform::from_str(name).ctx("Failed to parse filename as platform")?;
-            platform = Some(plat);
+
+        let (a, b) = filename.split_once('_').ctx("No underscore in flat filename")?;
+        let runtime_dir = if struc.platform_first {
+            RuntimeDir {
+                version: parse_version(b)?,
+                platform: parse_platform(a)?,
+                path: entry.path,
+            }
         } else {
-            let ver = Version::try_from(name).ctx("Failed to parse filename as version")?;
-            version = Some(ver);
-        }
-        get_nested_thingy(&path, &mut entries, version, platform)
-            .ctx(|| format!("Failed to walk runtimes subdirectory `{}`", path.display()))?;
+            RuntimeDir {
+                version: parse_version(a)?,
+                platform: parse_platform(b)?,
+                path: entry.path,
+            }
+        };
+        entries.push(runtime_dir);
     }
     Ok(entries)
 }
 
 fn get_nested_thingy(
     dir_path: &Path,
-    entries: &mut Vec<WalkTheDawg>,
+    entries: &mut Vec<RuntimeDir>,
     version: Option<Version>,
     platform: Option<Platform>,
 ) -> MyResult<()> {
-    for entry in std::fs::read_dir(dir_path)? {
-        let entry = entry?;
-        let path = entry.path();
-        if skip_entry(&path)? {
+    for entry in listdir(dir_path)? {
+        if !entry.is_dir() {
             continue;
         }
-        let name = dir_path.file_name().unwrap().to_str();
-        let name: &str = name.ctx("Invalid UTF-8 in filename")?;
+        let filename = entry.filename();
         let dawg = if let Some(version) = version {
-            let platform = parse_platform(name)?;
-            WalkTheDawg {
+            let platform = parse_platform(filename)?;
+            RuntimeDir {
                 version,
                 platform,
-                path,
+                path: entry.path,
             }
         } else if let Some(platform) = platform {
-            let version = parse_version(name)?;
-            WalkTheDawg {
+            let version = parse_version(filename)?;
+            RuntimeDir {
                 version,
                 platform,
-                path,
+                path: entry.path,
             }
         } else {
-            unreachable!()
+            unreachable!("<<<LLVM failed to optimize this away>>>")
         };
         entries.push(dawg);
     }

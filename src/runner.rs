@@ -7,12 +7,12 @@ use crate::extract::probe_7zip;
 use crate::ide::upgrade_gms1;
 use crate::runtime::Platform;
 use crate::runtime::fs::DirStructure;
-use crate::runtime::fs::WalkTheDawg;
+use crate::runtime::fs::RuntimeDir;
 use crate::tempslop::TempDir;
+use crate::util::FsEntry;
+use crate::util::listdir;
 use crate::util::mkdir;
-use crate::util::stat;
 use crate::version::Version;
-use std::fs::Metadata;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -29,14 +29,7 @@ struct IdeTarget {
 #[expect(clippy::useless_let_if_seq)]
 pub async fn collect_runners(args: CollectRunnerArgs) -> MyResult<()> {
     probe_7zip()?;
-
     let mut nothing_ever_happens = true;
-    if args.runtimes_dir.try_exists().unwrap_or(true) {
-        collect_runtime_runners(&args).await?;
-        nothing_ever_happens = false;
-    } else {
-        log::warn!("Runtimes directory does not exist: `{}`", args.runtimes_dir.display());
-    }
 
     if args.ides_dir.try_exists().unwrap_or(true) {
         collect_ide_runners(&args).await?;
@@ -45,33 +38,27 @@ pub async fn collect_runners(args: CollectRunnerArgs) -> MyResult<()> {
         log::warn!("IDEs directory does not exist: `{}`", args.ides_dir.display());
     }
 
+    if args.runtimes_dir.try_exists().unwrap_or(true) {
+        collect_runtime_runners(&args).await?;
+        nothing_ever_happens = false;
+    } else {
+        log::warn!("Runtimes directory does not exist: `{}`", args.runtimes_dir.display());
+    }
+
     if nothing_ever_happens {
         bail!("Neither the runtimes directory nor the IDEs directory exists");
     }
-    log::info!("All done!");
     Ok(())
 }
 
 async fn collect_ide_runners(args: &CollectRunnerArgs) -> MyResult<()> {
-    let ctx = || format!("Failed to read IDEs directory `{}`", args.ides_dir.display());
-
     let mut targets: Vec<IdeTarget> = Vec::new();
 
-    for entry in std::fs::read_dir(&args.ides_dir).ctx(ctx)? {
-        let entry = entry.ctx(ctx)?;
-        let path = entry.path();
-        let filename = path.file_name().unwrap();
-        let filename = filename
-            .to_str()
-            .ctx(|| format!("Non UTF-8 filename `{}`", filename.display()))?;
-        if filename.starts_with('.') {
-            continue;
-        }
-
-        let stuff = ide_version_from_filename(&path, filename)
-            .ctx(|| format!("Failed to detect version from IDE path `{}`", path.display()))?;
-        if stuff.version.0 == 1 {
-            targets.push(stuff);
+    for entry in listdir(&args.ides_dir)? {
+        let target: IdeTarget =
+            ide_target_from_filename(&entry).ctx(|| format!("Failed to detect version from IDE {entry}"))?;
+        if target.version.0 == 1 {
+            targets.push(target);
         }
     }
 
@@ -130,7 +117,7 @@ async fn copy_runner(ide_dir: &Path, output_dir: &Path, version: Version) -> MyR
     Ok(())
 }
 
-fn ide_version_from_filename(path: &Path, filename: &str) -> MyResult<IdeTarget> {
+fn ide_target_from_filename(entry: &FsEntry) -> MyResult<IdeTarget> {
     /// Original installer filenames start with one of these prefixes, depending on the GameMaker version.
     const PREFIXES: &[&str] = &[
         "GMStudio-Installer-",
@@ -138,8 +125,8 @@ fn ide_version_from_filename(path: &Path, filename: &str) -> MyResult<IdeTarget>
         "GameMaker-Installer-",
     ];
 
-    let metadata: Metadata = stat(path, "IDE file/directory")?;
-    if metadata.is_file() {
+    let filename: &str = entry.filename();
+    if entry.is_file() {
         let Some(stem) = filename.strip_suffix(".exe") else {
             bail!("Filename does not end with `.exe`: {filename:?}");
         };
@@ -149,14 +136,14 @@ fn ide_version_from_filename(path: &Path, filename: &str) -> MyResult<IdeTarget>
         };
         let version = Version::try_from(stem).ctx(|| format!("Failed to parse version from filename {filename:?}"))?;
         Ok(IdeTarget {
-            path: path.to_path_buf(),
+            path: entry.path.clone(),
             version,
             evolution,
         })
-    } else if metadata.is_dir() {
+    } else if entry.is_dir() {
         let version =
             Version::try_from(filename).ctx(|| format!("Failed to parse version from filename {filename:?}"))?;
-        let upgradezip_path = path.join("$LOCALAPPDATA/GameMaker-Studio/UpgradeZip");
+        let upgradezip_path = entry.path.join("$LOCALAPPDATA/GameMaker-Studio/UpgradeZip");
         let has_upgradezip: bool = upgradezip_path
             .try_exists()
             .ctx(|| format!("Failed to stat `{}`", upgradezip_path.display()))?;
@@ -166,37 +153,20 @@ fn ide_version_from_filename(path: &Path, filename: &str) -> MyResult<IdeTarget>
             IdeEvolution::Upgrade
         };
         Ok(IdeTarget {
-            path: path.to_path_buf(),
+            path: entry.path.clone(),
             version,
             evolution,
         })
     } else {
-        bail!(
-            "Directory entry is neither a file nor a directory: `{}`",
-            path.display()
-        );
+        bail!("Directory entry is neither a file nor a directory: {entry}");
     }
 }
 
-// TODO: garbage and duplicated code
 pub fn detect_ide_evolution(output_dir: &Path) -> MyResult<Option<IdeEvolution>> {
-    let ctx = || format!("Failed to read IDEs directory `{}`", output_dir.display());
-
-    for entry in std::fs::read_dir(output_dir).ctx(ctx)? {
-        let entry = entry.ctx(ctx)?;
-        let path = entry.path();
-        let filename = path.file_name().unwrap();
-        let filename = filename
-            .to_str()
-            .ctx(|| format!("Non UTF-8 filename `{}`", filename.display()))?;
-        if filename.starts_with('.') {
-            continue;
-        }
-        let stuff = ide_version_from_filename(&path, filename)
-            .ctx(|| format!("Failed to detect version from IDE path `{}`", path.display()))?;
-        return Ok(Some(stuff.evolution));
-    }
-    Ok(None)
+    let entries = listdir(output_dir)?;
+    let Some(entry) = entries.first() else { return Ok(None) };
+    let stuff = ide_target_from_filename(entry).ctx(|| format!("Failed to detect version from IDE {entry}"))?;
+    Ok(Some(stuff.evolution))
 }
 
 fn strip_any_prefix<'a>(string: &'a str, prefixes: &[&str]) -> Option<&'a str> {
@@ -211,7 +181,7 @@ fn strip_any_prefix<'a>(string: &'a str, prefixes: &[&str]) -> Option<&'a str> {
 async fn collect_runtime_runners(args: &CollectRunnerArgs) -> MyResult<()> {
     let struc: DirStructure = get_runtime_file_structure(&args.runtimes_dir)?;
     log::debug!("Detected {struc}");
-    let entries: Vec<WalkTheDawg> = struc
+    let entries: Vec<RuntimeDir> = struc
         .walk(&args.runtimes_dir)
         .ctx("Failed to walk runtimes directory")?;
 
@@ -229,7 +199,7 @@ async fn collect_runtime_runners(args: &CollectRunnerArgs) -> MyResult<()> {
     join_tasks(tasks).await
 }
 
-async fn collect_runtime_runner(entry: WalkTheDawg, output_dir: Arc<PathBuf>) -> MyResult<()> {
+async fn collect_runtime_runner(entry: RuntimeDir, output_dir: Arc<PathBuf>) -> MyResult<()> {
     // TODO: preserve original structure maybe??
     let filename = format!("{}_{}", entry.platform, entry.version);
     // TODO: should this append the `.exe` to the output filename for winslop?

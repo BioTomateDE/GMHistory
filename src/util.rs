@@ -1,12 +1,61 @@
 use crate::error::*;
+use std::fmt;
 use std::fs::FileType;
-use std::fs::Metadata;
 use std::io::ErrorKind;
 use std::path::Path;
+use std::path::PathBuf;
 
-pub fn stat(path: &Path, description: &'static str) -> MyResult<Metadata> {
-    path.metadata()
-        .ctx(|| format!("Failed to fetch metadata of {description} `{}`", path.display()))
+/// An entry in the filesystem. Either a file or a directory.
+#[derive(Debug)]
+pub struct FsEntry {
+    pub path: PathBuf,
+    pub kind: FileType,
+}
+
+impl FsEntry {
+    pub fn filename(&self) -> &str {
+        // This was validated in construction
+        self.path.file_name().unwrap().to_str().unwrap()
+    }
+
+    pub fn is_dir(&self) -> bool {
+        self.kind.is_dir()
+    }
+
+    pub fn is_file(&self) -> bool {
+        self.kind.is_file()
+    }
+}
+
+impl fmt::Display for FsEntry {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "({}) `{}`", file_kind(self.kind), self.path.display())
+    }
+}
+
+pub fn listdir(dir_path: impl AsRef<Path>) -> MyResult<Vec<FsEntry>> {
+    let dir_path = dir_path.as_ref();
+    let ctx = || format!("Failed to read directory `{}`", dir_path.display());
+    let mut entries: Vec<FsEntry> = Vec::new();
+    for entry in std::fs::read_dir(dir_path).ctx(ctx)? {
+        let entry: std::fs::DirEntry = entry.ctx(ctx)?;
+        let path: PathBuf = entry.path();
+        if path.file_name().unwrap().as_encoded_bytes().starts_with(b".") {
+            continue;
+        }
+        let kind: FileType = entry
+            .file_type()
+            .ctx(|| format!("Failed to get filetype of `{}`", path.display()))
+            .ctx(ctx)?;
+        let _: &str = path
+            .file_name()
+            .unwrap()
+            .to_str()
+            .ctx(|| format!("Invalid UTF-8 in filename of path `{}`", path.display()))
+            .ctx(ctx)?;
+        entries.push(FsEntry { path, kind });
+    }
+    Ok(entries)
 }
 
 fn ignore_kind(result: std::io::Result<()>, kind: ErrorKind) -> MyResult<()> {

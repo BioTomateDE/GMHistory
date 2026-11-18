@@ -28,6 +28,7 @@ use crate::progressbar::DownloadBar;
 use crate::progressbar::init_total_bar;
 use crate::tempslop::OpenTempFile;
 use crate::tempslop::TempDir;
+use crate::util::listdir;
 use crate::util::mkdir;
 use crate::version::Version;
 use std::path::Path;
@@ -253,27 +254,14 @@ fn yap_existing_structure(root_dir: &Path, provided_struc: DirStructure) -> MyRe
 }
 
 pub fn detect_existing_structure(root_dir: &Path) -> MyResult<Option<DirStructure>> {
-    for entry in std::fs::read_dir(root_dir).ctx("Failed to read directory")? {
-        let entry = entry.ctx("Entry of read_dir is broken")?;
-
-        let ty: std::fs::FileType = entry.file_type().ctx("Failed to get file type of dir entry")?;
-        if !ty.is_dir() {
+    for entry in listdir(root_dir)? {
+        if !entry.is_dir() {
             continue;
         }
-
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            bail!("Non UTF-8 subdirectory name");
-        };
-        if name.starts_with('.') {
-            continue;
-        }
-
-        if let Some(struc) = test_structure(name) {
+        if let Some(struc) = test_structure(entry.filename()) {
             return Ok(Some(struc));
         }
     }
-
     Ok(None)
 }
 
