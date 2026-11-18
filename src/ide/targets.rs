@@ -19,6 +19,8 @@ const fn x(version: Version, content_length: u64, url: &'static str) -> Download
 ///
 /// Official CDNs are preferred, as archive.org is slow.
 /// Let's just hope they don't get rid of the downloads later...
+///
+/// Apparently there's also another CDN: <https://download.opr.gg/> instead of <https://gms.yoyogames.com/>
 #[expect(clippy::unreadable_literal)]
 #[rustfmt::skip]
 pub static DOWNLOAD_TARGETS: &[DownloadTarget] = &[

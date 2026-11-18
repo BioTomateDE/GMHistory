@@ -46,9 +46,10 @@ pub async fn download_runtimes(mut args: DownloadRuntimeArgs) -> MyResult<()> {
         for plat in Platform::VARIANTS {
             println!("{plat}");
         }
-        eprintln!();
-        eprintln!("Note: `ROOT` isn't a real platform; it refers to the download URL in the RSS enclosure tag itself");
-        // honestly i havent looked in to what this thing actually stores/represents
+        eprintln!(
+            "\nNote: `ROOT` isn't a real platform; it refers to the download URL in the \
+            RSS enclosure tag itself which contains shared resources for all runtimes"
+        );
         return Ok(());
     }
 
