@@ -97,6 +97,7 @@ struct DownloadRuntimeArgs {
 
 /// Find runners from IDE and runtime dirs and collect them
 #[derive(Debug, Clone, Parser)]
+#[allow(clippy::struct_field_names)]
 struct CollectRunnerArgs {
     /// The directory where runners will be collected.
     #[arg(long, short, default_value = "gamemaker-runners")]
