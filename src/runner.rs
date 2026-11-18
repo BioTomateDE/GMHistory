@@ -103,8 +103,8 @@ async fn collect_ide_runners(args: &CollectRunnerArgs) -> MyResult<()> {
 async fn copy_runner(ide_dir: &Path, output_dir: &Path, version: Version) -> MyResult<()> {
     // 3 versions also have `Windows8/Native/executable/WinMetroRunner.exe` but it's the same as the x86 one
     const PATHS: &[(&str, &str)] = &[
-        ("Windows8/Native/x86/WinMetroRunner.exe", "windows8-x86"),
-        ("Windows8/Native/arm/WinMetroRunner.exe", "windows8-arm"),
+        // ("Windows8/Native/x86/WinMetroRunner.exe", "windows8-x86"),
+        // ("Windows8/Native/arm/WinMetroRunner.exe", "windows8-arm"),
         ("Tizen/Device/TizenRunner.exe", "tizen-arm"),
         ("Tizen/Emulator/TizenRunner.exe", "tizen-x86"),
     ];
