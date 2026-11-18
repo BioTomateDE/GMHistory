@@ -12,6 +12,7 @@ use crate::extract::probe_7zip;
 use crate::net::download;
 use crate::net::init_client;
 use crate::progressbar::DownloadBar;
+use crate::progressbar::init_total_bar;
 use crate::runner::detect_ide_evolution;
 use crate::tempslop::OpenTempFile;
 use crate::tempslop::TempDir;
@@ -63,7 +64,6 @@ pub async fn download_ides(args: DownloadIdeArgs) -> MyResult<()> {
     if count == 0 {
         return Ok(());
     }
-    log::info!("Downloading {count} IDEs");
 
     if let Some(evo) = detect_ide_evolution(&args.output_dir)?
         && evo != args.evolution
@@ -74,7 +74,10 @@ pub async fn download_ides(args: DownloadIdeArgs) -> MyResult<()> {
         );
     }
 
-    crate::progressbar::set_download_count(count);
+    let total_length: u64 = downloads.iter().map(|d| d.content_length).sum();
+    init_total_bar(count, total_length);
+    log::info!("Downloading {total_length} total bytes from {count} IDEs");
+
     let mut tasks = JoinSet::new();
     for download_target in downloads {
         let args = args.clone();
@@ -84,13 +87,17 @@ pub async fn download_ides(args: DownloadIdeArgs) -> MyResult<()> {
 }
 
 async fn download_ide(download_target: DownloadTarget, args: DownloadIdeArgs) -> MyResult<()> {
-    let DownloadTarget { version, url, .. } = &download_target;
+    let DownloadTarget {
+        version,
+        url,
+        content_length,
+    } = download_target;
     let name = if download_target.is_archive() {
         format!("IDE {version} (archive.org)")
     } else {
         format!("IDE {version}")
     };
-    let bar = DownloadBar::new(name);
+    let bar = DownloadBar::new(name, content_length);
     download_ide_impl(download_target, args, &bar)
         .await
         .ctx(|| format!("Failed to download IDE {version} from {url}"))?;
@@ -98,12 +105,7 @@ async fn download_ide(download_target: DownloadTarget, args: DownloadIdeArgs) ->
 }
 
 async fn download_ide_impl(download_target: DownloadTarget, args: DownloadIdeArgs, bar: &DownloadBar) -> MyResult<()> {
-    let DownloadTarget {
-        version,
-        url,
-        content_length,
-    } = download_target;
-    let temp_download_file: OpenTempFile = download(url, &args.output_dir, bar, Some(content_length)).await?;
+    let temp_download_file: OpenTempFile = download(download_target.url, &args.output_dir, bar).await?;
 
     let path = args.output_dir.join(download_target.filename(args.evolution));
     if args.evolution < IdeEvolution::Extract {
@@ -114,25 +116,21 @@ async fn download_ide_impl(download_target: DownloadTarget, args: DownloadIdeArg
     let archive_dir = TempDir::new(&args.output_dir)?;
     invoke_7zip(temp_download_file.path(), archive_dir.path(), None).await?;
 
-    let upgrade = args.evolution >= IdeEvolution::Upgrade;
-    let tempdir: TempDir = evolve(version, temp_download_file.path(), &args.output_dir, upgrade).await?;
-    tempdir.rename(&path)?;
+    // Unfortunately the progress bar will have to stay at
+    // 100% for a few seconds while 7-Zip is extracting.
+    let archive_dir = TempDir::new(&args.output_dir)?;
+    invoke_7zip(temp_download_file.path(), archive_dir.path(), None).await?;
+    drop(temp_download_file);
+    if args.evolution >= IdeEvolution::Upgrade && download_target.version.0 == 1 {
+        let tempdir = upgrade_gms1(download_target.version, archive_dir.path(), &args.output_dir).await?;
+        tempdir.rename(&path)?;
+    } else {
+        archive_dir.rename(&path)?;
+    }
     Ok(())
 }
 
 // TODO: get rid of this function
-pub async fn evolve(version: Version, ide_installer: &Path, output_dir: &Path, upgrade: bool) -> MyResult<TempDir> {
-    // Unfortunately the progress bar will have to stay at
-    // 100% for a few seconds while 7-Zip is extracting.
-    let archive_dir = TempDir::new(output_dir)?;
-    invoke_7zip(ide_installer, archive_dir.path(), None).await?;
-
-    if upgrade && version.0 == 1 {
-        upgrade_gms1(version, archive_dir.path(), output_dir).await
-    } else {
-        Ok(archive_dir)
-    }
-}
 
 // TODO: allow version ranges
 fn get_download_targets(args: &DownloadIdeArgs) -> Vec<DownloadTarget> {

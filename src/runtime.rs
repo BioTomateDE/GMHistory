@@ -1,3 +1,5 @@
+#[rustfmt::skip]
+mod content_lengths;
 pub mod fs;
 mod lost;
 mod password;
@@ -6,6 +8,7 @@ pub mod rss;
 mod url;
 mod versions;
 
+use self::content_lengths::get_content_length;
 use self::fs::DirStructure;
 use self::lost::LOST_RUNTIMES;
 use self::password::generate_password;
@@ -22,6 +25,7 @@ use crate::net::download;
 use crate::net::fetch_text;
 use crate::net::init_client;
 use crate::progressbar::DownloadBar;
+use crate::progressbar::init_total_bar;
 use crate::tempslop::OpenTempFile;
 use crate::tempslop::TempDir;
 use crate::util::mkdir;
@@ -34,7 +38,7 @@ use tokio::task::AbortHandle;
 use tokio::task::JoinSet;
 
 // TODO: use `dsaSignature` and `length` for validation maybe?
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct DownloadTarget {
     version: Version,
     platform: Platform,
@@ -65,8 +69,12 @@ pub async fn download_runtimes(mut args: DownloadRuntimeArgs) -> MyResult<()> {
     let download_targets: Vec<DownloadTarget> = get_download_targets(rss, &args)?;
     args.versions.clear();
     let count = download_targets.len();
-    crate::progressbar::set_download_count(count);
-    log::info!("Got {count} download targets");
+    let total_length: u64 = download_targets
+        .iter()
+        .map(|x| get_content_length(x.download_url.uuid).expect("Unknown download UUID"))
+        .sum();
+    init_total_bar(count, total_length);
+    log::info!("Downloading {total_length} total bytes for {count} runtimes");
 
     mkdir(&args.output_dir).ctx("Failed to create root output directory")?;
     yap_existing_structure(&args.output_dir, args.dir_structure)?;
@@ -81,9 +89,14 @@ pub async fn download_runtimes(mut args: DownloadRuntimeArgs) -> MyResult<()> {
 }
 
 async fn download_runtime(download_target: DownloadTarget, args: Arc<DownloadRuntimeArgs>) -> MyResult<()> {
-    let DownloadTarget { version, platform, .. } = download_target;
+    let DownloadTarget {
+        version,
+        platform,
+        download_url,
+    } = download_target;
     let name = format!("{version} {platform}");
-    let bar = DownloadBar::new(name);
+    let content_length: u64 = get_content_length(download_url.uuid).expect("Unknown download UUID");
+    let bar = DownloadBar::new(name, content_length);
     download_runtime_impl(download_target, args, &bar)
         .await
         .ctx(|| format!("Failed to download runtime {version} for {platform}"))?;
@@ -107,7 +120,7 @@ async fn download_runtime_impl(
     }
 
     let url = download_url.to_url();
-    let open_temp_file: OpenTempFile = download(&url, &args.output_dir, bar, None)
+    let open_temp_file: OpenTempFile = download(&url, &args.output_dir, bar)
         .await
         .ctx(|| format!("Failed to download {version} for {platform} from {url}"))?;
 

@@ -3,7 +3,6 @@ use crate::IdeEvolution;
 use crate::error::*;
 use crate::extract::invoke_7zip;
 use crate::extract::probe_7zip;
-use crate::ide::evolve;
 use crate::ide::upgrade_gms1;
 use crate::runtime::Platform;
 use crate::runtime::fs::DirStructure;
@@ -79,8 +78,13 @@ async fn collect_ide_runners(args: &CollectRunnerArgs) -> MyResult<()> {
             evolution,
         } = target;
         if evolution < IdeEvolution::Extract {
-            let upgrade = evolution >= IdeEvolution::Upgrade;
-            let tempdir = evolve(version, &path, &args.output_dir, upgrade).await?;
+            let archive_dir = TempDir::new(&args.output_dir)?;
+            invoke_7zip(&path, archive_dir.path(), None).await?;
+            let tempdir = if evolution >= IdeEvolution::Upgrade && version.0 == 1 {
+                upgrade_gms1(version, archive_dir.path(), &args.output_dir).await?
+            } else {
+                archive_dir
+            };
             copy_runner(tempdir.path(), &args.output_dir, version).await?;
         } else if evolution == IdeEvolution::Extract && version.0 == 1 {
             let tempdir = upgrade_gms1(version, &path, &args.output_dir).await?;

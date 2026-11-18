@@ -6,14 +6,14 @@ use uuid::Uuid;
 pub const DOMAIN: &str = "https://gms.yoyogames.com/";
 const DOMAIN_VERY_BAD_NOT_SECURE: &str = "http://gms.yoyogames.com/";
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[serde(try_from = "&str")]
 pub struct DownloadUrl {
     pub uuid: Uuid,
 }
 
 impl DownloadUrl {
-    pub fn to_url(&self) -> String {
+    pub fn to_url(self) -> String {
         format!("{DOMAIN}{}.zip", self.uuid.hyphenated())
     }
 }

@@ -146,6 +146,7 @@ pub fn set_ctrlc_handler() {
     // This will fail if already set, so only create one Downloader
     // triggers for SIGINT and for SIGTERM (`ctrlc` crate feature `termination`)
     ctrlc::set_handler(|| {
+        crate::progressbar::BAR_TOTAL.finish_and_clear();
         cleanup();
         std::process::exit(130); // SIGINT
     })
