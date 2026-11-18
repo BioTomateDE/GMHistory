@@ -15,6 +15,7 @@ use std::fs::Metadata;
 use std::path::Path;
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct IdeTarget {
     path: PathBuf,
     version: Version,
@@ -65,7 +66,9 @@ async fn collect_ide_runners(args: &CollectRunnerArgs) -> MyResult<()> {
 
         let stuff = ide_version_from_filename(&path, filename)
             .ctx(|| format!("Failed to detect version from IDE path `{}`", path.display()))?;
-        targets.push(stuff);
+        if stuff.version.0 == 1 {
+            targets.push(stuff);
+        }
     }
 
     log::info!("Extracting runners from {} IDEs", targets.len());
