@@ -1,5 +1,6 @@
 use crate::CollectRunnerArgs;
 use crate::IdeEvolution;
+use crate::asyncslop::join_tasks;
 use crate::error::*;
 use crate::extract::invoke_7zip;
 use crate::extract::probe_7zip;
@@ -14,6 +15,9 @@ use crate::version::Version;
 use std::fs::Metadata;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::task::AbortHandle;
+use tokio::task::JoinSet;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct IdeTarget {
@@ -72,31 +76,38 @@ async fn collect_ide_runners(args: &CollectRunnerArgs) -> MyResult<()> {
     }
 
     log::info!("Extracting runners from {} IDEs", targets.len());
-    // TODO: parallel slop
 
     for target in targets {
-        let IdeTarget {
-            path,
-            version,
-            evolution,
-        } = target;
-        if evolution < IdeEvolution::Extract {
-            let archive_dir = TempDir::new(&args.output_dir)?;
-            invoke_7zip(&path, archive_dir.path(), None).await?;
-            let tempdir = if evolution >= IdeEvolution::Upgrade && version.0 == 1 {
-                upgrade_gms1(version, archive_dir.path(), &args.output_dir).await?
-            } else {
-                archive_dir
-            };
-            copy_runner(tempdir.path(), &args.output_dir, version).await?;
-        } else if evolution == IdeEvolution::Extract && version.0 == 1 {
-            let tempdir = upgrade_gms1(version, &path, &args.output_dir).await?;
-            copy_runner(tempdir.path(), &args.output_dir, version).await?;
-        } else {
-            copy_runner(&path, &args.output_dir, version).await?;
-        }
+        let ver = target.version;
+        collect_ide_runner(target, args)
+            .await
+            .ctx(|| format!("Failed to collect runner from IDE {ver}"))?;
     }
 
+    Ok(())
+}
+
+async fn collect_ide_runner(target: IdeTarget, args: &CollectRunnerArgs) -> MyResult<()> {
+    let IdeTarget {
+        path,
+        version,
+        evolution,
+    } = target;
+    if evolution < IdeEvolution::Extract {
+        let archive_dir = TempDir::new(&args.output_dir)?;
+        invoke_7zip(&path, archive_dir.path(), None).await?;
+        let tempdir = if evolution >= IdeEvolution::Upgrade && version.0 == 1 {
+            upgrade_gms1(version, archive_dir.path(), &args.output_dir).await?
+        } else {
+            archive_dir
+        };
+        copy_runner(tempdir.path(), &args.output_dir, version).await?;
+    } else if evolution == IdeEvolution::Extract && version.0 == 1 {
+        let tempdir = upgrade_gms1(version, &path, &args.output_dir).await?;
+        copy_runner(tempdir.path(), &args.output_dir, version).await?;
+    } else {
+        copy_runner(&path, &args.output_dir, version).await?;
+    }
     Ok(())
 }
 
@@ -209,16 +220,16 @@ async fn collect_runtime_runners(args: &CollectRunnerArgs) -> MyResult<()> {
 
     mkdir(&args.output_dir).ctx("Failed to create output directory")?;
 
-    // TODO: parallel
+    let mut tasks = JoinSet::new();
+    let output_dir = Arc::new(args.output_dir.clone());
     for entry in entries {
-        collect_runtime_runner(&entry, &args.output_dir)
-            .await
-            .ctx(|| format!("Failed to collect runner from {entry:?}"))?;
+        let output_dir = Arc::clone(&output_dir);
+        let _: AbortHandle = tasks.spawn(async move { collect_runtime_runner(entry, output_dir).await });
     }
-    Ok(())
+    join_tasks(tasks).await
 }
 
-async fn collect_runtime_runner(entry: &WalkTheDawg, output_dir: &Path) -> MyResult<()> {
+async fn collect_runtime_runner(entry: WalkTheDawg, output_dir: Arc<PathBuf>) -> MyResult<()> {
     // TODO: preserve original structure maybe??
     let filename = format!("{}_{}", entry.platform, entry.version);
     // TODO: should this append the `.exe` to the output filename for winslop?
@@ -230,7 +241,7 @@ async fn collect_runtime_runner(entry: &WalkTheDawg, output_dir: &Path) -> MyRes
                 return Ok(());
             }
             let zip_path = entry.path.join("linux/runner.zip");
-            let tempdir = TempDir::new(output_dir)?;
+            let tempdir = TempDir::new(&output_dir)?;
             invoke_7zip(&zip_path, tempdir.path(), None)
                 .await
                 .ctx("Failed to extract Linux runner.zip")?;
