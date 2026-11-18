@@ -26,20 +26,6 @@ impl TempItems {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum TempItemKind {
-    File,
-    Dir,
-}
-impl TempItemKind {
-    const fn word(self) -> &'static str {
-        match self {
-            Self::File => "file",
-            Self::Dir => "dir",
-        }
-    }
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 #[derive(Debug)]
 pub struct TempFile(PathBuf);
@@ -64,7 +50,7 @@ impl TempFile {
 
     #[expect(dead_code)]
     pub fn rename(self, new_path: &Path) -> MyResult<()> {
-        rename(self.path(), new_path, TempItemKind::File)
+        rename(self.path(), new_path, "file")
     }
 }
 
@@ -97,7 +83,7 @@ impl TempDir {
     }
 
     pub fn rename(self, new_path: &Path) -> MyResult<()> {
-        rename(self.path(), new_path, TempItemKind::Dir)
+        rename(self.path(), new_path, "dir")
     }
 }
 
@@ -136,7 +122,7 @@ impl OpenTempFile {
     }
 
     pub fn rename(self, new_path: &Path) -> MyResult<()> {
-        rename(self.path(), new_path, TempItemKind::File)
+        rename(self.path(), new_path, "file")
     }
 }
 
@@ -174,15 +160,14 @@ fn remove_tempdir(path: &Path) {
     }
 }
 
-fn rename(from: &Path, to: &Path, kind: TempItemKind) -> MyResult<()> {
+fn rename(from: &Path, to: &Path, kind: &'static str) -> MyResult<()> {
     let Err(error) = std::fs::rename(from, to) else {
         return Ok(());
     };
-
     Err(err!(
         error,
         "Failed to rename temp{} from `{}` to `{}`",
-        kind.word(),
+        kind,
         from.display(),
         to.display(),
     ))
