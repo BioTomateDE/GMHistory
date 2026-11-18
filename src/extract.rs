@@ -4,19 +4,21 @@ use std::ffi::OsString;
 use std::path::Path;
 use std::process::Stdio;
 
-// TODO: collect 7zip error immediately and exit late
+// TODO: ideally get a rust crate that can extract these installers, but thats kinda unrealistic.
+// maybe use the standard zip crate for zip extractions tho? not a bottleneck so idk
+
 pub fn probe_7zip() -> MyResult<()> {
-    if std::process::Command::new("7z")
+    let ok = std::process::Command::new("7z")
         .arg("--help")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .is_ok()
-    {
-        Ok(())
-    } else {
-        bail!("You need to install 7-Zip (command 7z not found)");
+        .is_ok();
+    if ok {
+        return Ok(());
     }
+    log::error!("You need to install 7-Zip (command 7z not found)");
+    Err(err!("You need to install 7-Zip"))
 }
 
 pub async fn invoke_7zip(archive_file: &Path, destination_dir: &Path, password: Option<&str>) -> MyResult<()> {

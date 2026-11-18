@@ -57,12 +57,12 @@ pub async fn download_runtimes(mut args: DownloadRuntimeArgs) -> MyResult<()> {
         return Ok(());
     }
 
+    let probe_result = probe_7zip();
     if args.platforms.contains(&Platform::MacMono) {
         warn!("This tool does not support downloading mac.mono; see the GitHub README for download links");
     }
     validate_versions(&args.versions);
     init_client();
-    probe_7zip()?;
 
     let rss: Rss = fetch_manifest().await?;
 
@@ -78,6 +78,7 @@ pub async fn download_runtimes(mut args: DownloadRuntimeArgs) -> MyResult<()> {
 
     mkdir(&args.output_dir).ctx("Failed to create root output directory")?;
     yap_existing_structure(&args.output_dir, args.dir_structure)?;
+    probe_result?;
 
     let mut tasks = JoinSet::new();
     let args = Arc::new(args);

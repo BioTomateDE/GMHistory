@@ -51,9 +51,11 @@ impl DownloadTarget {
 }
 
 pub async fn download_ides(args: DownloadIdeArgs) -> MyResult<()> {
-    if args.evolution >= IdeEvolution::Extract {
-        probe_7zip()?;
-    }
+    let probe_result = if args.evolution >= IdeEvolution::Extract {
+        probe_7zip()
+    } else {
+        Ok(())
+    };
 
     init_client();
     mkdir(&args.output_dir).ctx("Could not create output directory")?;
@@ -74,6 +76,7 @@ pub async fn download_ides(args: DownloadIdeArgs) -> MyResult<()> {
         );
     }
 
+    probe_result?;
     let total_length: u64 = downloads.iter().map(|d| d.content_length).sum();
     init_total_bar(count, total_length);
     log::info!("Downloading {total_length} total bytes from {count} IDEs");
