@@ -6,7 +6,6 @@ use crate::version::Version;
 use std::fmt;
 use std::path::Path;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, clap::Args)]
 pub struct DirStructure {
@@ -66,21 +65,18 @@ pub struct RuntimeDir {
 }
 
 fn walk(struc: DirStructure, root_dir: &Path) -> MyResult<Vec<RuntimeDir>> {
-    let mut entries = Vec::new();
+    let mut runtime_dirs = Vec::new();
+
     for entry in listdir(root_dir)? {
         let filename = entry.filename();
         if struc.nested {
-            let mut platform = None;
-            let mut version = None;
             if struc.platform_first {
-                let plat = Platform::from_str(filename).ctx("Failed to parse filename as platform")?;
-                platform = Some(plat);
+                let platform = parse_platform(filename)?;
+                nested_versions(&entry.path, platform, &mut runtime_dirs)?;
             } else {
-                let ver = Version::try_from(filename).ctx("Failed to parse filename as version")?;
-                version = Some(ver);
+                let version = parse_version(filename)?;
+                nested_platforms(&entry.path, version, &mut runtime_dirs)?;
             }
-            get_nested_thingy(&entry.path, &mut entries, version, platform)
-                .ctx(|| format!("Failed to walk runtimes subdirectory {entry}"))?;
             continue;
         }
 
@@ -98,40 +94,38 @@ fn walk(struc: DirStructure, root_dir: &Path) -> MyResult<Vec<RuntimeDir>> {
                 path: entry.path,
             }
         };
-        entries.push(runtime_dir);
+        runtime_dirs.push(runtime_dir);
     }
-    Ok(entries)
+
+    Ok(runtime_dirs)
 }
 
-fn get_nested_thingy(
-    dir_path: &Path,
-    entries: &mut Vec<RuntimeDir>,
-    version: Option<Version>,
-    platform: Option<Platform>,
-) -> MyResult<()> {
-    for entry in listdir(dir_path)? {
+fn nested_platforms(subdir_path: &Path, version: Version, entries: &mut Vec<RuntimeDir>) -> MyResult<()> {
+    for entry in listdir(subdir_path)? {
         if !entry.is_dir() {
             continue;
         }
-        let filename = entry.filename();
-        let dawg = if let Some(version) = version {
-            let platform = parse_platform(filename)?;
-            RuntimeDir {
-                version,
-                platform,
-                path: entry.path,
-            }
-        } else if let Some(platform) = platform {
-            let version = parse_version(filename)?;
-            RuntimeDir {
-                version,
-                platform,
-                path: entry.path,
-            }
-        } else {
-            unreachable!("<<<LLVM failed to optimize this away>>>")
-        };
-        entries.push(dawg);
+        let platform = parse_platform(entry.filename())?;
+        entries.push(RuntimeDir {
+            version,
+            platform,
+            path: entry.path,
+        });
+    }
+    Ok(())
+}
+
+fn nested_versions(subdir_path: &Path, platform: Platform, entries: &mut Vec<RuntimeDir>) -> MyResult<()> {
+    for entry in listdir(subdir_path)? {
+        if !entry.is_dir() {
+            continue;
+        }
+        let version = parse_version(entry.filename())?;
+        entries.push(RuntimeDir {
+            version,
+            platform,
+            path: entry.path,
+        });
     }
     Ok(())
 }
