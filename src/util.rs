@@ -119,3 +119,19 @@ fn unix_file_kind(file_type: FileType) -> &'static str {
         "<unknown file type>"
     }
 }
+
+pub async fn copy_file(source_path: impl AsRef<Path>, dest_path: impl AsRef<Path>) -> MyResult<()> {
+    let source_path = source_path.as_ref();
+    let dest_path = dest_path.as_ref();
+    if dest_path.exists() {
+        return Ok(());
+    }
+    let _: u64 = tokio::fs::copy(source_path, dest_path).await.ctx(|| {
+        format!(
+            "Failed to copy runner file `{}` to `{}`",
+            source_path.display(),
+            dest_path.display()
+        )
+    })?;
+    Ok(())
+}

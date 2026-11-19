@@ -1,4 +1,5 @@
 mod asyncslop;
+mod decompile;
 mod error;
 mod extract;
 mod ide;
@@ -11,6 +12,7 @@ mod tempslop;
 mod util;
 mod version;
 
+use crate::decompile::decompile_runners;
 use crate::error::MyResult;
 use crate::ide::download_ides;
 use crate::logger::init_logger;
@@ -35,6 +37,7 @@ enum Command {
     DownloadIdes(DownloadIdeArgs),
     DownloadRuntimes(DownloadRuntimeArgs),
     CollectRunners(CollectRunnerArgs),
+    DecompileRunners(DecompileArgs),
 }
 
 /// Download GameMaker IDE installers and potentially extract them.
@@ -112,6 +115,23 @@ struct CollectRunnerArgs {
     ides_dir: PathBuf,
 }
 
+/// Decompile runners to C code using Ghidra.
+#[derive(Debug, Clone, Parser)]
+#[allow(clippy::struct_field_names)]
+struct DecompileArgs {
+    /// The directory where decompilations will be collected.
+    #[arg(long, short, default_value = "gamemaker-runners-decompiled")]
+    output_dir: PathBuf,
+
+    /// The directory you collected the runners.
+    #[arg(long, default_value = "gamemaker-runners")]
+    runners_dir: PathBuf,
+
+    /// Ghidra installation directory.
+    #[arg(long, default_value = "/opt/ghidra/")]
+    ghidra_dir: PathBuf,
+}
+
 #[tokio::main]
 async fn main() {
     init_logger();
@@ -121,6 +141,7 @@ async fn main() {
         Command::DownloadIdes(args) => download_ides(args).await,
         Command::DownloadRuntimes(args) => download_runtimes(args).await,
         Command::CollectRunners(args) => collect_runners(args).await,
+        Command::DecompileRunners(args) => decompile_runners(args).await,
     };
     crate::progressbar::BAR_TOTAL.finish_and_clear();
     if let Err(error) = result {

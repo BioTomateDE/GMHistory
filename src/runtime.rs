@@ -126,7 +126,7 @@ async fn download_runtime_impl(
         .await
         .ctx(|| format!("Failed to download {version} for {platform} from {url}"))?;
 
-    let archive_dir = TempDir::new(&args.output_dir)?;
+    let archive_dir = TempDir::new_in(&args.output_dir)?;
     let password: String = generate_password(download_url.uuid);
     log::debug!("Extracting {version} ({platform}) with password {password:?}");
     invoke_7zip(open_temp_file.path(), archive_dir.path(), Some(&password))

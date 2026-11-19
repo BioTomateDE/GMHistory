@@ -10,6 +10,7 @@ use crate::runtime::fs::DirStructure;
 use crate::runtime::fs::RuntimeDir;
 use crate::tempslop::TempDir;
 use crate::util::FsEntry;
+use crate::util::copy_file;
 use crate::util::listdir;
 use crate::util::mkdir;
 use crate::version::Version;
@@ -81,7 +82,7 @@ async fn collect_ide_runner(target: IdeTarget, args: &CollectRunnerArgs) -> MyRe
         evolution,
     } = target;
     if evolution < IdeEvolution::Extract {
-        let archive_dir = TempDir::new(&args.output_dir)?;
+        let archive_dir = TempDir::new_in(&args.output_dir)?;
         invoke_7zip(&path, archive_dir.path(), None).await?;
         let tempdir = if evolution >= IdeEvolution::Upgrade && version.0 == 1 {
             upgrade_gms1(version, archive_dir.path(), &args.output_dir).await?
@@ -106,7 +107,7 @@ async fn copy_runner(ide_dir: &Path, output_dir: &Path, version: Version) -> MyR
         ("Tizen/Device/TizenRunner.exe", "tizen-arm"),
         ("Tizen/Emulator/TizenRunner.exe", "tizen-x86"),
     ];
-    copy(
+    copy_file(
         ide_dir.join("Runner.exe"),
         output_dir.join(format!("windows-x64_{version}")),
     )
@@ -211,14 +212,14 @@ async fn collect_runtime_runner(entry: RuntimeDir, output_dir: Arc<PathBuf>) -> 
                 return Ok(());
             }
             let zip_path = entry.path.join("linux/runner.zip");
-            let tempdir = TempDir::new(&output_dir)?;
+            let tempdir = TempDir::new_in(&output_dir)?;
             invoke_7zip(&zip_path, tempdir.path(), None)
                 .await
                 .ctx("Failed to extract Linux runner.zip")?;
-            copy(tempdir.path().join("runner"), output_path).await?;
+            copy_file(tempdir.path().join("runner"), output_path).await?;
         }
         Platform::Ps4 => {
-            copy(entry.path.join("ps4/PS4Runner.elf"), output_path).await?;
+            copy_file(entry.path.join("ps4/PS4Runner.elf"), output_path).await?;
         }
         Platform::Windows => {
             // old versions only have the i686 runner.
@@ -234,11 +235,11 @@ async fn collect_runtime_runner(entry: RuntimeDir, output_dir: Arc<PathBuf>) -> 
             for arch in ["x86", "x64", "arm"] {
                 let src = entry.path.join(format!("windowsuap/{arch}/WinUAPRunner.exe"));
                 let dest = output_dir.join(format!("windowsuap-{arch}_{}", entry.version));
-                copy(src, dest).await?;
+                copy_file(src, dest).await?;
             }
         }
         Platform::XboxOne => {
-            copy(entry.path.join("xboxone/XboxOneRunner.exe"), output_path).await?;
+            copy_file(entry.path.join("xboxone/XboxOneRunner.exe"), output_path).await?;
         }
         _ => {}
     }
@@ -255,26 +256,10 @@ fn get_runtime_file_structure(path: &Path) -> MyResult<DirStructure> {
     crate::runtime::detect_existing_structure(path).ctx(ctx)?.ctx(ctx)
 }
 
-async fn copy(source_path: impl AsRef<Path>, dest_path: impl AsRef<Path>) -> MyResult<()> {
-    let source_path = source_path.as_ref();
-    let dest_path = dest_path.as_ref();
-    if dest_path.exists() {
-        return Ok(());
-    }
-    let _: u64 = tokio::fs::copy(source_path, dest_path).await.ctx(|| {
-        format!(
-            "Failed to copy runner file `{}` to `{}`",
-            source_path.display(),
-            dest_path.display()
-        )
-    })?;
-    Ok(())
-}
-
 async fn copy_if_exists(source_path: impl AsRef<Path>, dest_path: impl AsRef<Path>) -> MyResult<()> {
     let source_path = source_path.as_ref();
     if source_path.try_exists().unwrap_or(true) {
-        copy(source_path, dest_path).await?;
+        copy_file(source_path, dest_path).await?;
     }
     Ok(())
 }

@@ -116,12 +116,12 @@ async fn download_ide_impl(download_target: DownloadTarget, args: DownloadIdeArg
         return Ok(());
     }
 
-    let archive_dir = TempDir::new(&args.output_dir)?;
+    let archive_dir = TempDir::new_in(&args.output_dir)?;
     invoke_7zip(temp_download_file.path(), archive_dir.path(), None).await?;
 
     // Unfortunately the progress bar will have to stay at
     // 100% for a few seconds while 7-Zip is extracting.
-    let archive_dir = TempDir::new(&args.output_dir)?;
+    let archive_dir = TempDir::new_in(&args.output_dir)?;
     invoke_7zip(temp_download_file.path(), archive_dir.path(), None).await?;
     drop(temp_download_file);
     if args.evolution >= IdeEvolution::Upgrade && download_target.version.0 == 1 {
@@ -219,7 +219,7 @@ fn gms1_upgrade_zip_path(version: Version, temp_archive_dir: &Path) -> PathBuf {
 pub async fn upgrade_gms1(version: Version, ide_dir: &Path, output_dir: &Path) -> MyResult<TempDir> {
     // 1.4.1567 will fail here with "invalid password". No idea what the correct password is.
     let upgrade_zip = gms1_upgrade_zip_path(version, ide_dir);
-    let archive_dir = TempDir::new(output_dir)?;
+    let archive_dir = TempDir::new_in(output_dir)?;
     invoke_7zip(&upgrade_zip, archive_dir.path(), Some(GMS1_PASSWORD)).await?;
     Ok(archive_dir)
 }

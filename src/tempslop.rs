@@ -1,6 +1,7 @@
 use crate::error::*;
 use crate::util::ignore_notfound;
 use std::fs::File;
+use std::io::ErrorKind;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -31,16 +32,21 @@ impl TempItems {
 pub struct TempFile(PathBuf);
 
 impl TempFile {
+    pub fn new_for_ghidra() -> MyResult<Self> {
+        let ctx = "Failed to create tempdir in tmpfs";
+        let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned").ctx(ctx)?;
+        let filename = format!("ghidra-is-a-little-bitch-{}.c", temp_items.counter);
+        let path = std::env::temp_dir().join(filename);
+        create_file(&path, &mut temp_items).ctx(ctx)?;
+        Ok(Self(path))
+    }
+
     pub fn new(inside_dir: &Path) -> MyResult<Self> {
         let ctx = || format!("Failed to create tempfile inside `{}`", inside_dir.display());
         let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned").ctx(ctx)?;
         let filename = format!(".download{}.tmp", temp_items.counter);
         let path: PathBuf = inside_dir.join(filename);
-        if path.exists() {
-            return Err(err!("Tempfile already exists: {}", path.display()).ctx(TIP).ctx(ctx));
-        }
-        temp_items.counter += 1;
-        temp_items.files.push(Self(path.clone()));
+        create_file(&path, &mut temp_items).ctx(ctx)?;
         Ok(Self(path))
     }
 
@@ -48,7 +54,7 @@ impl TempFile {
         &self.0
     }
 
-    #[expect(dead_code)]
+    #[allow(dead_code)]
     pub fn rename(self, new_path: &Path) -> MyResult<()> {
         rename(self.path(), new_path, "file")
     }
@@ -65,16 +71,22 @@ impl Drop for TempFile {
 pub struct TempDir(PathBuf);
 
 impl TempDir {
-    pub fn new(inside_dir: &Path) -> MyResult<Self> {
+    /// Ghidra is a little bitch and will throw an error if a part of the the path starts with a dot.
+    pub fn new_for_ghidra() -> MyResult<Self> {
+        let ctx = "Failed to create tempdir in tmpfs";
+        let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned").ctx(ctx)?;
+        let filename = format!("ghidra-is-a-little-bitch-{}.d", temp_items.counter);
+        let path = std::env::temp_dir().join(filename);
+        create_dir(&path, &mut temp_items).ctx(ctx)?;
+        Ok(Self(path))
+    }
+
+    pub fn new_in(inside_dir: &Path) -> MyResult<Self> {
         let ctx = || format!("Failed to create tempdir inside `{}`", inside_dir.display());
         let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned").ctx(ctx)?;
         let filename = format!(".archive{}.tmp.d", temp_items.counter);
         let path: PathBuf = inside_dir.join(filename);
-        if path.exists() {
-            return Err(err!("Tempdir already exists: {}", path.display()).ctx(TIP).ctx(ctx));
-        }
-        temp_items.counter += 1;
-        temp_items.dirs.push(Self(path.clone()));
+        create_dir(&path, &mut temp_items).ctx(ctx)?;
         Ok(Self(path))
     }
 
@@ -171,4 +183,26 @@ fn rename(from: &Path, to: &Path, kind: &'static str) -> MyResult<()> {
         from.display(),
         to.display(),
     ))
+}
+
+fn create_dir(path: &Path, temp_items: &mut TempItems) -> MyResult<()> {
+    match std::fs::create_dir(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == ErrorKind::AlreadyExists => {
+            return Err(err!("Tempdir already exists: {}", path.display()).ctx(TIP));
+        }
+        Err(e) => Err(e)?,
+    }
+    temp_items.counter += 1;
+    temp_items.dirs.push(TempDir(path.to_path_buf()));
+    Ok(())
+}
+
+fn create_file(path: &Path, temp_items: &mut TempItems) -> MyResult<()> {
+    if path.exists() {
+        return Err(err!("Tempfile already exists: {}", path.display()).ctx(TIP));
+    }
+    temp_items.counter += 1;
+    temp_items.files.push(TempFile(path.to_path_buf()));
+    Ok(())
 }
