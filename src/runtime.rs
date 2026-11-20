@@ -136,7 +136,7 @@ async fn download_runtime_impl(
 
     args.dir_structure
         .ensure_parent_dir(&args.output_dir, version, platform)?;
-    archive_dir.rename(&output_dir)?;
+    archive_dir.rename(&output_dir).await?;
     Ok(())
 }
 

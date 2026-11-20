@@ -23,6 +23,7 @@ use crate::tempslop::set_ctrlc_handler;
 use crate::version::Version;
 use clap::Parser;
 use clap::Subcommand;
+use std::num::NonZeroU8;
 use std::path::PathBuf;
 
 /// Tool to download and extract GameMaker IDE installers and runtimes.
@@ -37,7 +38,7 @@ enum Command {
     DownloadIdes(DownloadIdeArgs),
     DownloadRuntimes(DownloadRuntimeArgs),
     CollectRunners(CollectRunnerArgs),
-    DecompileRunners(DecompileArgs),
+    DecompileRunners(DecompileRunnerArgs),
 }
 
 /// Download GameMaker IDE installers and potentially extract them.
@@ -117,8 +118,7 @@ struct CollectRunnerArgs {
 
 /// Decompile runners to C code using Ghidra.
 #[derive(Debug, Clone, Parser)]
-#[allow(clippy::struct_field_names)]
-struct DecompileArgs {
+struct DecompileRunnerArgs {
     /// The directory where decompilations will be collected.
     #[arg(long, short, default_value = "gamemaker-runners-decompiled")]
     output_dir: PathBuf,
@@ -130,6 +130,15 @@ struct DecompileArgs {
     /// Ghidra installation directory.
     #[arg(long, default_value = "/opt/ghidra/")]
     ghidra_dir: PathBuf,
+
+    /// Don't format decompiled C code with clang-format.
+    #[arg(long)]
+    no_format: bool,
+
+    /// Override number of concurrent Ghidra units.
+    /// By default, it is calculated based on your CPU cores and RAM.
+    #[arg(long, short)]
+    jobs: Option<NonZeroU8>,
 }
 
 #[tokio::main]

@@ -112,7 +112,7 @@ async fn download_ide_impl(download_target: DownloadTarget, args: DownloadIdeArg
 
     let path = args.output_dir.join(download_target.filename(args.evolution));
     if args.evolution < IdeEvolution::Extract {
-        temp_download_file.rename(&path)?;
+        temp_download_file.rename(&path).await?;
         return Ok(());
     }
 
@@ -126,9 +126,9 @@ async fn download_ide_impl(download_target: DownloadTarget, args: DownloadIdeArg
     drop(temp_download_file);
     if args.evolution >= IdeEvolution::Upgrade && download_target.version.0 == 1 {
         let tempdir = upgrade_gms1(download_target.version, archive_dir.path(), &args.output_dir).await?;
-        tempdir.rename(&path)?;
+        tempdir.rename(&path).await?;
     } else {
-        archive_dir.rename(&path)?;
+        archive_dir.rename(&path).await?;
     }
     Ok(())
 }

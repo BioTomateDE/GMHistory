@@ -35,7 +35,7 @@ impl TempFile {
     pub fn new_for_ghidra() -> MyResult<Self> {
         let ctx = "Failed to create tempdir in tmpfs";
         let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned").ctx(ctx)?;
-        let filename = format!("ghidra-is-a-little-bitch-{}.c", temp_items.counter);
+        let filename = format!("gmhistory-ghidra-{}.c", temp_items.counter);
         let path = std::env::temp_dir().join(filename);
         create_file(&path, &mut temp_items).ctx(ctx)?;
         Ok(Self(path))
@@ -44,7 +44,7 @@ impl TempFile {
     pub fn new(inside_dir: &Path) -> MyResult<Self> {
         let ctx = || format!("Failed to create tempfile inside `{}`", inside_dir.display());
         let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned").ctx(ctx)?;
-        let filename = format!(".download{}.tmp", temp_items.counter);
+        let filename = format!(".gmhistory-tempfile-{}.tmp", temp_items.counter);
         let path: PathBuf = inside_dir.join(filename);
         create_file(&path, &mut temp_items).ctx(ctx)?;
         Ok(Self(path))
@@ -54,9 +54,8 @@ impl TempFile {
         &self.0
     }
 
-    #[allow(dead_code)]
-    pub fn rename(self, new_path: &Path) -> MyResult<()> {
-        rename(self.path(), new_path, "file")
+    pub async fn rename(self, new_path: &Path) -> MyResult<()> {
+        rename(self.path(), new_path, "file").await
     }
 }
 
@@ -75,7 +74,7 @@ impl TempDir {
     pub fn new_for_ghidra() -> MyResult<Self> {
         let ctx = "Failed to create tempdir in tmpfs";
         let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned").ctx(ctx)?;
-        let filename = format!("ghidra-is-a-little-bitch-{}.d", temp_items.counter);
+        let filename = format!("gmhistory-ghidra-{}.d", temp_items.counter);
         let path = std::env::temp_dir().join(filename);
         create_dir(&path, &mut temp_items).ctx(ctx)?;
         Ok(Self(path))
@@ -84,7 +83,7 @@ impl TempDir {
     pub fn new_in(inside_dir: &Path) -> MyResult<Self> {
         let ctx = || format!("Failed to create tempdir inside `{}`", inside_dir.display());
         let mut temp_items = TEMP_ITEMS.lock().ctx("Mutex is poisoned").ctx(ctx)?;
-        let filename = format!(".archive{}.tmp.d", temp_items.counter);
+        let filename = format!(".gmhistory-tempdir-{}.tmp", temp_items.counter);
         let path: PathBuf = inside_dir.join(filename);
         create_dir(&path, &mut temp_items).ctx(ctx)?;
         Ok(Self(path))
@@ -94,8 +93,8 @@ impl TempDir {
         &self.0
     }
 
-    pub fn rename(self, new_path: &Path) -> MyResult<()> {
-        rename(self.path(), new_path, "dir")
+    pub async fn rename(self, new_path: &Path) -> MyResult<()> {
+        rename(self.path(), new_path, "dir").await
     }
 }
 
@@ -133,8 +132,8 @@ impl OpenTempFile {
         &mut self.file
     }
 
-    pub fn rename(self, new_path: &Path) -> MyResult<()> {
-        rename(self.path(), new_path, "file")
+    pub async fn rename(self, new_path: &Path) -> MyResult<()> {
+        rename(self.path(), new_path, "file").await
     }
 }
 
@@ -172,8 +171,8 @@ fn remove_tempdir(path: &Path) {
     }
 }
 
-fn rename(from: &Path, to: &Path, kind: &'static str) -> MyResult<()> {
-    let Err(error) = std::fs::rename(from, to) else {
+async fn rename(from: &Path, to: &Path, kind: &'static str) -> MyResult<()> {
+    let Err(error) = tokio::fs::rename(from, to).await else {
         return Ok(());
     };
     Err(err!(

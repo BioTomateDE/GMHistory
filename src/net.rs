@@ -39,11 +39,7 @@ pub async fn fetch_text(url: impl IntoUrl) -> MyResult<String> {
     resp.text().await.ctx("Failed to get response text")
 }
 
-pub async fn download(
-    url: impl IntoUrl,
-    target_dir: &Path,
-    bar: &DownloadBar,
-) -> MyResult<OpenTempFile> {
+pub async fn download(url: impl IntoUrl, target_dir: &Path, bar: &DownloadBar) -> MyResult<OpenTempFile> {
     let url: reqwest::Url = url.into_url().ctx("Bad URL")?;
     let limit = get_download_limit(&url);
     let _permit = limit.acquire().await.unwrap();

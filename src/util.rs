@@ -135,3 +135,23 @@ pub async fn copy_file(source_path: impl AsRef<Path>, dest_path: impl AsRef<Path
     })?;
     Ok(())
 }
+
+#[inline] // to avoid allocation if the returned string is discarded
+pub async fn run_command(mut command: tokio::process::Command, name: &'static str) -> MyResult<String> {
+    let std::process::Output { status, stdout, stderr } = command
+        .kill_on_drop(true)
+        .output()
+        .await
+        .ctx(|| format!("Failed to invoke command {name}"))?;
+    if status.success() {
+        return Ok(String::from_utf8_lossy_owned(stdout));
+    }
+    let stdout = output_to_string(stdout);
+    let stderr = output_to_string(stderr);
+    bail!("Command {name} failed with `{status}`\n[stdout] {stdout}\n[stderr] {stderr}");
+}
+
+fn output_to_string(stream: Vec<u8>) -> String {
+    let stream = ::strip_ansi_escapes::strip(stream);
+    String::from_utf8_lossy(&stream).trim().to_owned()
+}

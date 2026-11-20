@@ -1,4 +1,4 @@
-use crate::DecompileArgs;
+use crate::DecompileRunnerArgs;
 use crate::asyncslop::join_tasks;
 use crate::error::*;
 use crate::progressbar::BAR_TOTAL;
@@ -6,10 +6,10 @@ use crate::progressbar::init_total_bar;
 use crate::tempslop::TempDir;
 use crate::tempslop::TempFile;
 use crate::util::FsEntry;
-use crate::util::copy_file;
 use crate::util::file_kind;
 use crate::util::listdir;
 use crate::util::mkdir;
+use crate::util::run_command;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -19,13 +19,13 @@ use tokio::task::JoinSet;
 
 const JAVA_CODE: &str = include_str!("Decompile.java");
 
-const GIB: u64 = 1024 * 1024 * 1024;
+const MIB: u64 = 1024 * 1024;
 
-/// Average memory usage of one Ghidra unit (~2GiB).
-const GHIDRA_RAM_USAGE: u64 = 2 * GIB;
+/// Average memory usage of one Ghidra unit.
+const GHIDRA_RAM_USAGE: u64 = 2048 * MIB;
 
 /// How much system memory to keep free (1 GiB).
-const RAM_BUFFER: u64 = GIB;
+const RAM_BUFFER: u64 = 1024 * MIB;
 
 #[derive(Debug)]
 struct GlobalContext {
@@ -35,8 +35,11 @@ struct GlobalContext {
     limit: Semaphore,
 }
 
-pub async fn decompile_runners(args: DecompileArgs) -> MyResult<()> {
+pub async fn decompile_runners(args: DecompileRunnerArgs) -> MyResult<()> {
     let ghidra_path: PathBuf = probe_ghidra(&args.ghidra_dir)?;
+    if !args.no_format {
+        probe_clang_format().await?;
+    }
 
     let temp_script_dir = TempDir::new_for_ghidra()?;
     let temp_script_path = temp_script_dir.path().join("Decompile.java");
@@ -45,23 +48,16 @@ pub async fn decompile_runners(args: DecompileArgs) -> MyResult<()> {
     let runners_dir: Vec<FsEntry> = listdir(&args.runners_dir)?;
     mkdir(&args.output_dir)?;
 
-    let cpu_count: usize = match std::thread::available_parallelism() {
-        Ok(n) if n.get() < 2 => 1,
-        Ok(n) => n.get() - 1, // keep one core free
-        Err(e) => {
-            warn!(e, "Failed to get number of CPU cores; falling back to one");
-            1
+    let limit: usize = if let Some(n) = args.jobs {
+        if let Ok(ideal) = ideal_job_count()
+            && ideal + 4 < n.get() as usize
+        {
+            warn!("Optimal number of Ghidra jobs {ideal} is significantly lower than provided job count {n}");
         }
+        usize::from(n.get())
+    } else {
+        ideal_job_count().ctx("Failed to calculate optimal number of Ghidra jobs")?
     };
-    let available_ram: u64 = ::system_memory::available();
-    let available_ram = available_ram
-        .checked_sub(RAM_BUFFER)
-        .ctx("You don't have enough system memory!!!")?;
-    let ram_limit = (available_ram / GHIDRA_RAM_USAGE) as usize;
-    if ram_limit < 1 {
-        bail!("I know times are tough with all the AI slop but you need more RAM for ts");
-    }
-    let limit = ram_limit.min(cpu_count);
 
     log::info!("Decompiling {} runners ({limit} concurrently)", runners_dir.len());
     log::info!("Don't panic if it looks stuck; it just takes a while");
@@ -92,8 +88,7 @@ pub async fn decompile_runners(args: DecompileArgs) -> MyResult<()> {
 }
 
 async fn decompile_runner(runner: FsEntry, global: Arc<GlobalContext>) -> MyResult<()> {
-    let _cpu_permit = global.limit.acquire().await?;
-
+    let _permit = global.limit.acquire().await?;
     let name = runner.filename();
     let output_path = global.output_dir.join(name.to_owned() + ".c");
     log::debug!("Decompiling {name}");
@@ -105,7 +100,9 @@ async fn decompile_runner(runner: FsEntry, global: Arc<GlobalContext>) -> MyResu
 async fn decompile_runner_impl(runner_path: &Path, output_path: &Path, global: &GlobalContext) -> MyResult<()> {
     let tempdir = TempDir::new_for_ghidra()?;
     let tempfile = TempFile::new_for_ghidra()?;
-    let output = tokio::process::Command::new(&global.ghidra_path)
+
+    let mut command = tokio::process::Command::new(&global.ghidra_path);
+    _ = command
         .arg(tempdir.path())
         .arg("TempProject")
         .arg("-import")
@@ -115,24 +112,38 @@ async fn decompile_runner_impl(runner_path: &Path, output_path: &Path, global: &
         .arg("-postScript")
         .arg("Decompile.java")
         .arg(tempfile.path())
-        .arg("-deleteProject")
-        .output()
-        .await
-        .ctx("Failed to invoke Ghidra")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        bail!(
-            "Ghidra failed with {}; stdout: <<{stdout}\n>> stderr: <<\n{stderr}>>",
-            output.status
-        );
-    }
+        .arg("-deleteProject");
+    let _: String = run_command(command, "Ghidra").await?;
 
-    format_c_code(tempfile.path()).await?;
-    // rename may not work here due to potentially crossing filesystems/devices
-    copy_file(tempfile.path(), output_path).await?;
-    BAR_TOTAL.inc(1);
+    // Make another tempfile in the output directory (instead of formatting in-place)
+    // so I can use an (atomic) rename.
+    let out_tempfile = TempFile::new(output_path.parent().unwrap())?;
+    format_c_code(tempfile.path(), out_tempfile.path())
+        .await
+        .ctx("Failed to format the decompiled C code")?;
+    drop(tempfile);
+    out_tempfile.rename(output_path).await?;
+    BAR_TOTAL.inc(1); // TODO: also update message. should this even use a progress bar?
     Ok(())
+}
+
+fn ideal_job_count() -> MyResult<usize> {
+    let cpu_count: usize = match std::thread::available_parallelism() {
+        Ok(n) => n.get(),
+        Err(e) => {
+            warn!(e, "Failed to get number of CPU cores; falling back to one");
+            1
+        }
+    };
+    let available_ram: u64 = ::system_memory::available();
+    let available_ram = available_ram
+        .checked_sub(RAM_BUFFER)
+        .ctx("You don't have enough system memory!!!")?;
+    let ram_limit = (available_ram / GHIDRA_RAM_USAGE) as usize;
+    if ram_limit < 1 {
+        bail!("I know times are tough with all the AI slop but you need more RAM for ts");
+    }
+    Ok(ram_limit.min(cpu_count))
 }
 
 fn probe_ghidra(ghidra_dir: &Path) -> MyResult<PathBuf> {
@@ -150,6 +161,15 @@ fn probe_ghidra(ghidra_dir: &Path) -> MyResult<PathBuf> {
     Ok(ghidra)
 }
 
+async fn probe_clang_format() -> MyResult<()> {
+    let mut command = tokio::process::Command::new("clang-format");
+    _ = command.arg("--version");
+    let _: String = run_command(command, "clang-format")
+        .await
+        .ctx("Make sure to install clang-format")?;
+    Ok(())
+}
+
 const CLANG_FORMAT_STYLE: &str = "{
 BasedOnStyle: LLVM,
 IndentWidth: 4,
@@ -163,20 +183,15 @@ BinPackArguments: false,
 BinPackParameters: false,
 }";
 
-async fn format_c_code(code_file_path: &Path) -> MyResult<()> {
-    let output = tokio::process::Command::new("clang-format")
+async fn format_c_code(input_path: &Path, output_path: &Path) -> MyResult<()> {
+    let mut command = tokio::process::Command::new("clang-format");
+    _ = command
         .arg("--style")
         .arg(CLANG_FORMAT_STYLE)
-        .arg("-i") // format file in place
-        .arg("--")
-        .arg(code_file_path)
-        .output()
+        .arg("--") //
+        .arg(input_path);
+    let formatted_code: String = run_command(command, "clang-format").await?;
+    tokio::fs::write(output_path, formatted_code)
         .await
-        .ctx("Failed to invoke clang-format")?;
-    let status = output.status;
-    if !status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("Failed to format C code; clang-format failed with {status}: <<\n{stderr}>>")
-    }
-    Ok(())
+        .ctx(|| format!("Failed to write formatted C code to `{}`", output_path.display()))
 }
