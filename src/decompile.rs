@@ -191,7 +191,7 @@ async fn format_c_code(input_path: &Path, output_path: &Path) -> MyResult<()> {
         .arg("--") //
         .arg(input_path);
     let formatted_code: String = run_command(command, "clang-format").await?;
-    tokio::fs::write(output_path, formatted_code)
+    tokio::fs::write(output_path, formatted_code.trim())
         .await
         .ctx(|| format!("Failed to write formatted C code to `{}`", output_path.display()))
 }
