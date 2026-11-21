@@ -23,7 +23,7 @@ const JAVA_CODE: &str = include_str!("Decompile.java");
 const MIB: u64 = 1024 * 1024;
 
 /// Average memory usage of one Ghidra unit.
-const GHIDRA_RAM_USAGE: u64 = 2048 * MIB;
+const GHIDRA_RAM_USAGE: u64 = 3072 * MIB;
 
 /// How much system memory to keep free (1 GiB).
 const RAM_BUFFER: u64 = 1024 * MIB;
@@ -104,8 +104,11 @@ async fn decompile_runner_impl(runner_path: &Path, output_path: &Path, global: &
 
     let mut command = tokio::process::Command::new(&global.ghidra_path);
     _ = command
+        .env("MAXMEM", "2G")
         .arg(tempdir.path())
         .arg("TempProject")
+        .arg("-max-cpu")
+        .arg("1")
         .arg("-import")
         .arg(runner_path)
         .arg("-scriptPath")
@@ -114,7 +117,16 @@ async fn decompile_runner_impl(runner_path: &Path, output_path: &Path, global: &
         .arg("Decompile.java")
         .arg(tempfile.path())
         .arg("-deleteProject");
-    let _: String = run_command(command, "Ghidra").await?;
+    let stdout: String = run_command(command, "Ghidra").await?;
+    if !tempfile.exists()? {
+        let dashes = "-----------------------------------------------------";
+        let stdout: &str = if let Some((_, stdout)) = stdout.rsplit_once(dashes) {
+            stdout
+        } else {
+            &stdout
+        };
+        bail!("Ghidra failed:\n{}", stdout.trim());
+    }
 
     // Make another tempfile in the output directory (instead of formatting in-place)
     // so I can use an (atomic) rename.

@@ -1,5 +1,5 @@
 // Shitty script for invoking Ghidra's `analyzeHeadless` tool.
-// Mostly slopcoded.
+// Mostly slopcoded, sorry.
 
 import ghidra.app.script.GhidraScript;
 import ghidra.app.decompiler.*;
@@ -7,9 +7,11 @@ import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.mem.Memory;
 import ghidra.program.model.symbol.ReferenceIterator;
 import java.io.*;
 import java.nio.file.*;
+import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -31,17 +33,72 @@ public class Decompile extends GhidraScript {
 
     private Function findRegisterFunc() throws Exception {
         Data anchorData = findStringData("show_debug_message");
-        ReferenceIterator refs = currentProgram.getReferenceManager().getReferencesTo(anchorData.getAddress());
-        for (Reference ref : refs) {
-            Instruction ins = getInstructionAt(ref.getFromAddress());
-            for (int i = 0; i < 6 && ins != null; i++) {
-                if (ins.getFlowType().isCall() && ins.getFlows().length > 0) {
-                    return getFunctionAt(ins.getFlows()[0]);
+        List<Address> targets = new ArrayList<>();
+        targets.add(anchorData.getAddress());
+
+        // Pass 1: direct references. Pass 2: references to pointers that point at the string.
+        for (int pass = 0; pass < 2; pass++) {
+            List<Address> next = new ArrayList<>();
+            for (Address target : targets) {
+                for (Reference ref : getReferencesTo(target)) {
+                    Address from = ref.getFromAddress();
+                    Instruction ins = getInstructionContaining(from);
+                    if (ins == null) {
+                        // Data reference (pointer table entry): look for references to that pointer next
+                        next.add(from);
+                        continue;
+                    }
+                    Function f = callAfter(ins);
+                    if (f != null) return f;
                 }
-                ins = getInstructionAfter(ins);
             }
+            targets = next;
         }
-        throw new Exception("Could not find GML function register function");
+
+        // Fallback: scan for any pointer-sized value equal to the string address
+        Memory m = currentProgram.getMemory();
+        int psize = currentProgram.getDefaultPointerSize();
+        byte[] pat = addrBytes(anchorData.getAddress(), psize);
+        Address hit = m.findBytes(currentProgram.getMinAddress(), pat, null, true, monitor);
+        while (hit != null) {
+            println("raw pointer to string at " + hit);
+            for (Reference ref : getReferencesTo(hit)) {
+                Instruction ins = getInstructionContaining(ref.getFromAddress());
+                if (ins == null) continue;
+                Function f = callAfter(ins);
+                if (f != null) return f;
+            }
+            Address nextStart = hit.add(1);
+            hit = m.findBytes(nextStart, pat, null, true, monitor);
+        }
+
+        throw new Exception("Could not find GML function register function (string at "
+                + anchorData.getAddress() + ", refs: "
+                + getReferencesTo(anchorData.getAddress()).length + ")");
+    }
+
+    /** Walk forward within the same function until the first call with a resolvable target. */
+    private Function callAfter(Instruction ins) {
+        Function owner = getFunctionContaining(ins.getAddress());
+        for (int i = 0; i < 24 && ins != null; i++) {
+            if (owner != null && !owner.getBody().contains(ins.getAddress())) break;
+            if (ins.getFlowType().isCall()) {
+                for (Address flow : ins.getFlows()) {
+                    Function f = getFunctionAt(flow);
+                    if (f == null) f = createFunction(flow, null);  // target not analyzed as a function
+                    if (f != null) return f;
+                }
+            }
+            ins = ins.getNext();
+        }
+        return null;
+    }
+
+    private byte[] addrBytes(Address a, int size) {
+        long v = a.getOffset();
+        byte[] b = new byte[size];
+        for (int i = 0; i < size; i++) b[i] = (byte) (v >> (8 * i));  // little-endian (x86)
+        return b;
     }
 
     private void fixStrings() throws Exception {

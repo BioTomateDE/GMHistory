@@ -57,6 +57,12 @@ impl TempFile {
     pub async fn rename(self, new_path: &Path) -> MyResult<()> {
         rename(self.path(), new_path, "file").await
     }
+
+    pub fn exists(&self) -> MyResult<bool> {
+        self.path()
+            .try_exists()
+            .ctx(|| format!("Failed to check existence of {self:?}"))
+    }
 }
 
 impl Drop for TempFile {
@@ -160,12 +166,14 @@ pub fn cleanup() {
 }
 
 fn remove_tempfile(path: &Path) {
+    log::trace!("Deleting tempfile {}", path.display());
     if let Err(e) = ignore_notfound(std::fs::remove_file(path)) {
         warn!(e, "Failed to remove tempfile `{}`", path.display());
     }
 }
 
 fn remove_tempdir(path: &Path) {
+    log::trace!("Deleting tempdir {}", path.display());
     if let Err(e) = ignore_notfound(std::fs::remove_dir_all(path)) {
         warn!(e, "Failed to remove tempdir `{}`", path.display());
     }
