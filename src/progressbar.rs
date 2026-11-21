@@ -43,6 +43,12 @@ pub fn init_total_bar(count: usize, length: u64) {
     BAR_TOTAL.set_message(format!("(0/{count})"));
 }
 
+pub fn inc_and_update_message() {
+    let done: usize = FILES_DONE.fetch_add(1, Ordering::Relaxed) + 1;
+    let total = FILES_TOTAL.load(Ordering::Relaxed);
+    BAR_TOTAL.set_message(format!("({done}/{total})"));
+}
+
 pub struct DownloadBar(ProgressBar);
 
 impl DownloadBar {
@@ -60,8 +66,6 @@ impl DownloadBar {
 impl Drop for DownloadBar {
     fn drop(&mut self) {
         self.0.finish_and_clear();
-        let done: usize = FILES_DONE.fetch_add(1, Ordering::Relaxed) + 1;
-        let total = FILES_TOTAL.load(Ordering::Relaxed);
-        BAR_TOTAL.set_message(format!("({done}/{total})"));
+        inc_and_update_message();
     }
 }

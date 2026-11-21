@@ -2,6 +2,7 @@ use crate::DecompileRunnerArgs;
 use crate::asyncslop::join_tasks;
 use crate::error::*;
 use crate::progressbar::BAR_TOTAL;
+use crate::progressbar::inc_and_update_message;
 use crate::progressbar::init_total_bar;
 use crate::tempslop::TempDir;
 use crate::tempslop::TempFile;
@@ -124,6 +125,7 @@ async fn decompile_runner_impl(runner_path: &Path, output_path: &Path, global: &
     drop(tempfile);
     out_tempfile.rename(output_path).await?;
     BAR_TOTAL.inc(1); // TODO: also update message. should this even use a progress bar?
+    inc_and_update_message();
     Ok(())
 }
 

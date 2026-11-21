@@ -146,12 +146,22 @@ pub async fn run_command(mut command: tokio::process::Command, name: &'static st
     if status.success() {
         return Ok(String::from_utf8_lossy_owned(stdout));
     }
-    let stdout = output_to_string(stdout);
-    let stderr = output_to_string(stderr);
-    bail!("Command {name} failed with `{status}`\n[stdout] {stdout}\n[stderr] {stderr}");
+
+    let mut error = format!("Command {name} failed with `{status}`");
+    append_output(stdout, "stdout", &mut error);
+    append_output(stderr, "stderr", &mut error);
+    Err(Error::new(error))
 }
 
 fn output_to_string(stream: Vec<u8>) -> String {
     let stream = ::strip_ansi_escapes::strip(stream);
     String::from_utf8_lossy(&stream).trim().to_owned()
+}
+
+fn append_output(output: Vec<u8>, kind: &'static str, string: &mut String) {
+    let output = output_to_string(output);
+    if !output.is_empty() {
+        use std::fmt::Write;
+        _ = write!(string, "\n[{kind}] {output}");
+    }
 }
