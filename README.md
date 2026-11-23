@@ -21,15 +21,21 @@ Of all **1395** GameMaker runtimes, this tool can download **1288**.
 > [!NOTE]
 > This tool is still a work-in-progress.
 > Things might not work yet. Things might change.
-> I will release pre-built binaries when it is stable enough.
+
+- [Linux aarch64](https://nightly.link/BioTomateDE/GMHistory/workflows/build/main/gmhistory-linux-arm64.zip)
+- [Linux x86-64](https://nightly.link/BioTomateDE/GMHistory/workflows/build/main/gmhistory-linux-x64.zip)
+- [Mac aarch64](https://nightly.link/BioTomateDE/GMHistory/workflows/build/main/gmhistory-macos-arm64.zip)
+- [Windows x86-64](https://nightly.link/BioTomateDE/GMHistory/workflows/build/main/gmhistory-windows-x64.zip)
+
+## Compilation
+
+If your target architecture / platform isn't supported, you can compile it yourself:
 
 1. Install the [Rust toolchain](https://rustup.rs)
 2. Install 7-Zip (see below).
 3. Clone this repo: `git clone https://github.com/BioTomateDE/GMHistory && cd GMHistory`
 4. Compile: `cargo b -r`
 5. Run the program: `./target/release/gmhistory`
-
-To understand the program better, call it with `--help` on a subcommand, like `./gmhistory download-ides --help`.
 
 ### Getting 7-Zip
 
@@ -40,6 +46,12 @@ To understand the program better, call it with `--help` on a subcommand, like `.
 
 If you are a poor soul still using Windows, then you'll also have to make sure that the `7z` program is in your PATH.
 See <https://stackoverflow.com/questions/4822400> for example.
+
+## Usage
+
+Just run the program in a terminal, it lists what it can do / how to use it: `./gmhistory --help`.
+You can also call it with `--help` on a subcommand, like `./gmhistory download-ides --help`.
+When in doubt, open up an issue!
 
 ## IDEs
 
