@@ -4,3 +4,6 @@ gamemaker-runtimes
 gamemaker-runners
 gamemaker-runners-decompiled
 profile.json.gz
+*.bak
+*.7z
+*.zip

@@ -1,3 +1,4 @@
+// This is straight garbage but it works.
 use crate::DecompileRunnerArgs;
 use crate::asyncslop::join_tasks;
 use crate::error::*;

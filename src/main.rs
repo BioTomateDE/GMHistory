@@ -2,6 +2,7 @@ mod asyncslop;
 mod decompile;
 mod error;
 mod extract;
+mod functions;
 mod ide;
 mod logger;
 mod net;
@@ -14,6 +15,7 @@ mod version;
 
 use crate::decompile::decompile_runners;
 use crate::error::MyResult;
+use crate::functions::extract_gml_functions;
 use crate::ide::download_ides;
 use crate::logger::init_logger;
 use crate::runner::collect_runners;
@@ -39,6 +41,7 @@ enum Command {
     DownloadRuntimes(DownloadRuntimeArgs),
     CollectRunners(CollectRunnerArgs),
     DecompileRunners(DecompileRunnerArgs),
+    ExtractGmlFunctions(ExtractGmlFunctionArgs),
 }
 
 /// Download GameMaker IDE installers and potentially extract them.
@@ -141,6 +144,18 @@ struct DecompileRunnerArgs {
     jobs: Option<NonZeroU8>,
 }
 
+/// Collect all GML function declarations from runner C source code.
+#[derive(Debug, Clone, Parser)]
+struct ExtractGmlFunctionArgs {
+    /// The directory where decompilations will be collected.
+    #[arg(long, short, default_value = "gamemaker-functions")]
+    output_dir: PathBuf,
+
+    /// The directory you collected the runner decompilations.
+    #[arg(long, default_value = "gamemaker-runners-decompiled")]
+    runners_dir: PathBuf,
+}
+
 #[tokio::main]
 async fn main() {
     init_logger();
@@ -151,6 +166,7 @@ async fn main() {
         Command::DownloadRuntimes(args) => download_runtimes(args).await,
         Command::CollectRunners(args) => collect_runners(args).await,
         Command::DecompileRunners(args) => decompile_runners(args).await,
+        Command::ExtractGmlFunctions(args) => extract_gml_functions(args).await,
     };
     crate::progressbar::BAR_TOTAL.finish_and_clear();
     if let Err(error) = result {
